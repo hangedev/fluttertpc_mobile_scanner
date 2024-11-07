@@ -1,5 +1,5 @@
 /// @docImport 'package:mobile_scanner/src/mobile_scanner_controller.dart';
-library;
+// library;
 
 import 'dart:typed_data';
 import 'dart:ui';
@@ -34,4 +34,6 @@ class BarcodeCapture {
 
   /// The size of the camera input [image].
   final Size size;
+
+  get corners => null;
 }

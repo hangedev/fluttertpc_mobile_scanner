@@ -37,17 +37,22 @@ Rect calculateScanWindowRelativeToTextureInPercentage(
       final s = min(sx, sy);
       sx = s;
       sy = s;
+      break;
     case BoxFit.cover:
       final s = max(sx, sy);
       sx = s;
       sy = s;
+      break;
     case BoxFit.fitWidth:
       sy = sx;
+      break;
     case BoxFit.fitHeight:
       sx = sy;
+      break;
     case BoxFit.none:
       sx = 1.0;
       sy = 1.0;
+      break;
     case BoxFit.scaleDown:
       final s = min(sx, sy);
       sx = s;

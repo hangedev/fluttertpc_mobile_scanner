@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:mobile_scanner/src/enums/barcode_format.dart';
 import 'package:mobile_scanner/src/enums/camera_facing.dart';
@@ -238,8 +239,20 @@ class MobileScannerController extends ValueNotifier<MobileScannerState> {
     if (!value.isRunning) {
       return;
     }
-
-    final double clampedZoomScale = zoomScale.clamp(0.0, 1.0);
+    double clampedZoomScale = 0.0;
+    if (defaultTargetPlatform == TargetPlatform.ohos) {
+      if (zoomScale < 0 || zoomScale > 10) {
+        throw const MobileScannerException(
+          errorCode: MobileScannerErrorCode.genericError,
+          errorDetails: MobileScannerErrorDetails(
+            message: 'The zoomScale must be between 0 and 10.',
+          ),
+        );
+      }
+      clampedZoomScale = zoomScale.clamp(0.0, 10.0);
+    } else {
+      clampedZoomScale = zoomScale.clamp(0.0, 1.0);
+    }
 
     // Update the zoom scale state to the new state.
     // When the platform has updated the zoom scale,

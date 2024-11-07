@@ -19,8 +19,7 @@ class _BarcodeScannerWithZoomState extends State<BarcodeScannerWithZoom> {
   final MobileScannerController controller = MobileScannerController(
     torchEnabled: true,
   );
-
-  double _zoomFactor = 0.0;
+  double _zoomFactor = defaultTargetPlatform == TargetPlatform.ohos ? 10 : 0.0;
 
   Widget _buildZoomScaleSlider() {
     return ValueListenableBuilder(
@@ -46,11 +45,19 @@ class _BarcodeScannerWithZoomState extends State<BarcodeScannerWithZoom> {
               ),
               Expanded(
                 child: Slider(
+                  max: defaultTargetPlatform ==
+                      TargetPlatform.ohos ? 100 : 1,
                   value: _zoomFactor,
                   onChanged: (value) {
                     setState(() {
                       _zoomFactor = value;
-                      controller.setZoomScale(value);
+                      // controller.setZoomScale(value);
+                      if (defaultTargetPlatform ==
+                          TargetPlatform.ohos) {
+                        controller.setZoomScale(value / 10);
+                      } else {
+                        controller.setZoomScale(value);
+                      }
                     });
                   },
                 ),

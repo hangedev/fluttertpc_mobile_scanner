@@ -19,7 +19,11 @@ dependencies:
   flutter:
     sdk: flutter
 
-  image_picker: ^1.0.4
+  #image_picker: ^1.0.4
+  image_picker:
+    git:
+      url: "https://gitee.com/openharmony-sig/flutter_packages.git"
+      path: "packages/image_picker/image_picker"
   mobile_scanner:
     # When depending on this package from a real application you should use:
     #   mobile_scanner: ^x.y.z
