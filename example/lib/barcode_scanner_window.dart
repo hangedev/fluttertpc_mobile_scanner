@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
@@ -14,8 +16,31 @@ class BarcodeScannerWithScanWindow extends StatefulWidget {
 }
 
 class _BarcodeScannerWithScanWindowState
-    extends State<BarcodeScannerWithScanWindow> {
+    extends State<BarcodeScannerWithScanWindow> with WidgetsBindingObserver {
   final MobileScannerController controller = MobileScannerController();
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (!controller.value.hasCameraPermission) {
+      return;
+    }
+    switch (state) {
+      case AppLifecycleState.detached:
+      case AppLifecycleState.hidden:
+      case AppLifecycleState.paused:
+        return;
+      case AppLifecycleState.resumed:
+        unawaited(controller.start());
+      case AppLifecycleState.inactive:
+        unawaited(controller.stop());
+    }
+  }
 
   Widget _buildBarcodeOverlay() {
     return ValueListenableBuilder(
@@ -119,6 +144,7 @@ class _BarcodeScannerWithScanWindowState
 
   @override
   Future<void> dispose() async {
+    WidgetsBinding.instance.removeObserver(this);
     super.dispose();
     await controller.dispose();
   }

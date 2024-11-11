@@ -12,10 +12,33 @@ class BarcodeScannerListView extends StatefulWidget {
   State<BarcodeScannerListView> createState() => _BarcodeScannerListViewState();
 }
 
-class _BarcodeScannerListViewState extends State<BarcodeScannerListView> {
+class _BarcodeScannerListViewState extends State<BarcodeScannerListView> with WidgetsBindingObserver  {
   final MobileScannerController controller = MobileScannerController(
     torchEnabled: true,
   );
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (!controller.value.hasCameraPermission) {
+      return;
+    }
+    switch (state) {
+      case AppLifecycleState.detached:
+      case AppLifecycleState.hidden:
+      case AppLifecycleState.paused:
+        return;
+      case AppLifecycleState.resumed:
+        unawaited(controller.start());
+      case AppLifecycleState.inactive:
+        unawaited(controller.stop());
+    }
+  }
 
   Widget _buildBarcodesListView() {
     return StreamBuilder<BarcodeCapture>(
@@ -95,6 +118,7 @@ class _BarcodeScannerListViewState extends State<BarcodeScannerListView> {
 
   @override
   Future<void> dispose() async {
+    WidgetsBinding.instance.removeObserver(this);
     super.dispose();
     await controller.dispose();
   }
