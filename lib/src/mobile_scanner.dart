@@ -305,7 +305,9 @@ class _MobileScannerState extends State<MobileScanner>
 
     switch (state) {
       case AppLifecycleState.detached:
+        break;
       case AppLifecycleState.hidden:
+        break;
       case AppLifecycleState.paused:
         return;
       case AppLifecycleState.resumed:
@@ -314,8 +316,8 @@ class _MobileScannerState extends State<MobileScanner>
           onError: widget.onDetectError,
           cancelOnError: false,
         );
-
         unawaited(controller.start());
+        break;
       case AppLifecycleState.inactive:
         unawaited(_subscription?.cancel());
         _subscription = null;

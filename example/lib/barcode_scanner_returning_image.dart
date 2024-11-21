@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
@@ -15,11 +16,34 @@ class BarcodeScannerReturningImage extends StatefulWidget {
 }
 
 class _BarcodeScannerReturningImageState
-    extends State<BarcodeScannerReturningImage> {
+    extends State<BarcodeScannerReturningImage> with WidgetsBindingObserver {
   final MobileScannerController controller = MobileScannerController(
     torchEnabled: true,
     returnImage: true,
   );
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (!controller.value.hasCameraPermission) {
+      return;
+    }
+    switch (state) {
+      case AppLifecycleState.detached:
+      case AppLifecycleState.hidden:
+      case AppLifecycleState.paused:
+        return;
+      case AppLifecycleState.resumed:
+        unawaited(controller.start());
+      case AppLifecycleState.inactive:
+        unawaited(controller.stop());
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -129,6 +153,7 @@ class _BarcodeScannerReturningImageState
 
   @override
   Future<void> dispose() async {
+    WidgetsBinding.instance.removeObserver(this);
     super.dispose();
     await controller.dispose();
   }

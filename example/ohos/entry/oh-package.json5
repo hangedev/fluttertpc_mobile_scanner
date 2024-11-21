@@ -1,0 +1,13 @@
+{
+  "name": "entry",
+  "version": "1.0.0",
+  "description": "Please describe the basic information.",
+  "main": "",
+  "author": "",
+  "license": "",
+  "dependencies": {
+    "mobile_scanner": "file:../har/mobile_scanner.har",
+    "integration_test": "file:../har/integration_test.har",
+    "image_picker_ohos": "file:../har/image_picker_ohos.har"
+  }
+}

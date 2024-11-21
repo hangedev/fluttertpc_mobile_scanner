@@ -15,12 +15,34 @@ class BarcodeScannerWithZoom extends StatefulWidget {
   State<BarcodeScannerWithZoom> createState() => _BarcodeScannerWithZoomState();
 }
 
-class _BarcodeScannerWithZoomState extends State<BarcodeScannerWithZoom> {
+class _BarcodeScannerWithZoomState extends State<BarcodeScannerWithZoom> with WidgetsBindingObserver {
   final MobileScannerController controller = MobileScannerController(
     torchEnabled: true,
   );
+  double _zoomFactor = defaultTargetPlatform == TargetPlatform.ohos ? 10 : 0.0;
 
-  double _zoomFactor = 0.0;
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (!controller.value.hasCameraPermission) {
+      return;
+    }
+    switch (state) {
+      case AppLifecycleState.detached:
+      case AppLifecycleState.hidden:
+      case AppLifecycleState.paused:
+        return;
+      case AppLifecycleState.resumed:
+        unawaited(controller.start());
+      case AppLifecycleState.inactive:
+        unawaited(controller.stop());
+    }
+  }
 
   Widget _buildZoomScaleSlider() {
     return ValueListenableBuilder(
@@ -46,11 +68,19 @@ class _BarcodeScannerWithZoomState extends State<BarcodeScannerWithZoom> {
               ),
               Expanded(
                 child: Slider(
+                  max: defaultTargetPlatform ==
+                      TargetPlatform.ohos ? 100 : 1,
                   value: _zoomFactor,
                   onChanged: (value) {
                     setState(() {
                       _zoomFactor = value;
-                      controller.setZoomScale(value);
+                      // controller.setZoomScale(value);
+                      if (defaultTargetPlatform ==
+                          TargetPlatform.ohos) {
+                        controller.setZoomScale(value / 10);
+                      } else {
+                        controller.setZoomScale(value);
+                      }
                     });
                   },
                 ),
@@ -117,6 +147,7 @@ class _BarcodeScannerWithZoomState extends State<BarcodeScannerWithZoom> {
 
   @override
   Future<void> dispose() async {
+    WidgetsBinding.instance.removeObserver(this);
     super.dispose();
     await controller.dispose();
   }

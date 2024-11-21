@@ -12,10 +12,33 @@ class BarcodeScannerPageView extends StatefulWidget {
   State<BarcodeScannerPageView> createState() => _BarcodeScannerPageViewState();
 }
 
-class _BarcodeScannerPageViewState extends State<BarcodeScannerPageView> {
+class _BarcodeScannerPageViewState extends State<BarcodeScannerPageView> with WidgetsBindingObserver {
   final MobileScannerController controller = MobileScannerController();
 
   final PageController pageController = PageController();
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (!controller.value.hasCameraPermission) {
+      return;
+    }
+    switch (state) {
+      case AppLifecycleState.detached:
+      case AppLifecycleState.hidden:
+      case AppLifecycleState.paused:
+        return;
+      case AppLifecycleState.resumed:
+        unawaited(controller.start());
+      case AppLifecycleState.inactive:
+        unawaited(controller.stop());
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -51,6 +74,7 @@ class _BarcodeScannerPageViewState extends State<BarcodeScannerPageView> {
 
   @override
   Future<void> dispose() async {
+    WidgetsBinding.instance.removeObserver(this);
     pageController.dispose();
     super.dispose();
     await controller.dispose();
