@@ -207,8 +207,7 @@ class BarcodeOverlay extends CustomPainter {
     double verticalPadding = size.height - adjustedSize.destination.height;
     double horizontalPadding = size.width - adjustedSize.destination.width;
     if (verticalPadding > 0) {
-
-      verticalPadding = defaultTargetPlatform == TargetPlatform.ohos ? ((verticalPadding - 130) / 2) : verticalPadding / 2;
+      verticalPadding = verticalPadding / 2;
     } else {
       verticalPadding = 0;
     }

@@ -296,29 +296,31 @@ export class MobileScannerPlugin implements FlutterPlugin, MethodCallHandler, Ab
         return;
       }
       if (frameResult && frameResult.scanCodeRects && frameResult.scanCodeRects.length > 0) {
-        let sourcePotions: image.SourceOptions = {
-          sourceDensity: 120,
-          sourcePixelFormat: image.PixelMapFormat.NV21,
-          sourceSize: { height: 960, width: 1280 }
+        try {
+          let sourcePotions: image.SourceOptions = {
+            sourceDensity: 120,
+            sourcePixelFormat: image.PixelMapFormat.NV21,
+            sourceSize: { height: this.scanHeight, width: this.scanWidth }
+          }
+          let imageResource = image.createImageSource(frameResult.byteBuffer, sourcePotions)
+          let opts: image.InitializationOptions = {
+            editable: true,
+            pixelFormat: 3,
+            size: { height: this.scanHeight, width: this.scanHeight }
+          }
+          let pixelMap: image.PixelMap = await imageResource.createPixelMap(opts)
+          let packer: image.ImagePacker = image.createImagePacker()
+          let packingOpt: image.PackingOption = { format: "image/jpeg", quality: 100 }
+          let imgBuffer = await packer.packing(pixelMap, packingOpt);
+          this.imageBuffer = new Uint8Array(imgBuffer)
+        } catch(e) {
+          Log.e(TAG, `Failed to create imageBuffer`);
         }
-        let imageResource = image.createImageSource(frameResult.byteBuffer, sourcePotions)
-        let opts: image.InitializationOptions = {
-          editable: true,
-          pixelFormat: 3,
-          size: { height: 960, width: 1280 }
-        }
-        let pixelMap: image.PixelMap = await imageResource.createPixelMap(opts)
-        let packer: image.ImagePacker = image.createImagePacker()
-        let packingOpt: image.PackingOption = { format: "image/jpeg", quality: 100 }
-        let imgBuffer = await packer.packing(pixelMap, packingOpt);
-        this.imageBuffer = new Uint8Array(imgBuffer)
-        if (frameResult.scanCodeRects[0]) {
-          this.scanCodeRect = [];
-          // 码图位置信息转换
-          this.changeToXComponent(frameResult);
-        } else {
-          Log.e(TAG, `Failed to get scanCodeRects by callback`);
-        }
+        this.scanCodeRect = [];
+        // 码图位置信息转换
+        this.changeToXComponent(frameResult);
+      } else {
+        Log.e(TAG, `Failed to get scanCodeRects by callback`);
       }
     }
 
