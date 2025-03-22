@@ -119,9 +119,9 @@ export class MobileScannerPlugin implements FlutterPlugin, MethodCallHandler, Ab
     const textureRegistry = this.binding!.getTextureRegistry();
     const textureId = textureRegistry.getTextureId();
     const surfaceTextureEntry = textureRegistry.registerTexture(textureId);
-    const surfaceId = surfaceTextureEntry.getSurfaceId().toString();
+    this.surfaceId = surfaceTextureEntry.getSurfaceId().toString();
     this.textureId = textureId;
-    this.surfaceId = surfaceId;
+    Log.i(TAG, `surfaceId: ${this.surfaceId}`)
   }
 
   onDetachedFromEngine(binding: FlutterPluginBinding): void {
@@ -208,12 +208,17 @@ export class MobileScannerPlugin implements FlutterPlugin, MethodCallHandler, Ab
         enableAlbum: true
       }
       customScan.init(options);
+      // 取浮点数
       // 设置预览流高度，默认单位：vp
-      const cameraHeight: number = px2vp(cameraResolution[1])
+      this.cameraHeight = px2vp(cameraResolution[1]);
+      if (Number.isInteger(this.cameraHeight)) {
+        this.cameraHeight = this.cameraHeight + 0.00000000001;
+      }
       // 设置预览流宽度，默认单位：vp
-      const cameraWidth: number = px2vp(cameraResolution[0])
-      this.cameraWidth = cameraWidth;
-      this.cameraHeight = cameraHeight;
+      this.cameraWidth = px2vp(cameraResolution[0]);
+      if (Number.isInteger(this.cameraWidth)) {
+        this.cameraWidth = this.cameraWidth + 0.00000000001;
+      }
       this.setDisplay()
       this.startScan()
       if (torch) {
@@ -229,8 +234,8 @@ export class MobileScannerPlugin implements FlutterPlugin, MethodCallHandler, Ab
       result.success({
         "textureId": this.textureId,
         "size": {
-          "width": cameraWidth,
-          "height": cameraHeight
+          "width": this.cameraWidth,
+          "height": this.cameraHeight
         },
         // "torchable": torchable,
         "currentTorchState": this.getFlashLightStatue(),
@@ -347,12 +352,17 @@ export class MobileScannerPlugin implements FlutterPlugin, MethodCallHandler, Ab
   }
 
   startScan() {
-    const viewControl: customScan.ViewControl = {
-      width: this.scanWidth,
-      height: this.scanHeight,
-      surfaceId: this.surfaceId!,
-    };
-    customScan.start(viewControl, this.scanCallback, this.frameCallback)
+    try {
+      const viewControl: customScan.ViewControl = {
+        width: this.scanWidth,
+        height: this.scanHeight,
+        surfaceId: this.surfaceId!,
+      };
+      customScan.start(viewControl, this.scanCallback, this.frameCallback)
+      Log.i(TAG, 'Scan started successfully');
+    } catch (err) {
+      Log.e(TAG, `Failed to start scan: ${err.message}`)
+    }
   }
 
   // 竖屏时获取屏幕尺寸，设置预览流全屏示例
