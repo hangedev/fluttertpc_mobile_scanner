@@ -34,10 +34,8 @@ import { display } from '@kit.ArkUI';
 import { Point } from '@ohos.UiTest';
 import { hasFlashUnit, getCameraManager } from './CameraUtil';
 import { image } from '@kit.ImageKit';
-import { JSON } from '@kit.ArkTS';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { camera } from '@kit.CameraKit';
-import { radio } from '@kit.TelephonyKit';
 
 const TAG: string = "MobileScannerPlugin";
 
@@ -127,6 +125,7 @@ export class MobileScannerPlugin implements FlutterPlugin, MethodCallHandler, Ab
     this.eventChannel?.setStreamHandler(null);
     this.eventChannel = null;
     this.isStart = false;
+    this.scanWindow = null;
     this.imageBuffer = null;
     binding.getTextureRegistry().unregisterTexture(this.textureId);
   }
@@ -182,6 +181,11 @@ export class MobileScannerPlugin implements FlutterPlugin, MethodCallHandler, Ab
     const timeout: number = call.argument("timeout") ?? 250
     this.cameraResolutionValues = call.argument("cameraResolution")
     const useNewCameraSelector: boolean = call.argument("useNewCameraSelector") ?? false
+
+    this.scanWindow = null;
+    if (this.isStart){
+      this.stop(null);
+    }
 
     if (!this.isStart) {
       this.isStart = true;
@@ -362,17 +366,17 @@ export class MobileScannerPlugin implements FlutterPlugin, MethodCallHandler, Ab
     return number;
   }
 
-  async stop(result: MethodResult) {
+  async stop(result: MethodResult | null) {
     if (this.isStart) {
-      this.isStart = false;
       try {
         await customScan.stop();
-        await customScan.release()
+        await customScan.release();
+        this.isStart = false;
       } catch (e) {
-        this.isStart = true;
+        if (result) this.isStart = true;
       }
     }
-    result.success(null)
+    result?.success(null)
   }
 
   getFlashLightStatue(): number {
