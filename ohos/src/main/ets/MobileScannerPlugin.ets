@@ -37,6 +37,7 @@ import { image } from '@kit.ImageKit';
 import { JSON } from '@kit.ArkTS';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { camera } from '@kit.CameraKit';
+import { radio } from '@kit.TelephonyKit';
 
 const TAG: string = "MobileScannerPlugin";
 
@@ -84,17 +85,13 @@ export class MobileScannerPlugin implements FlutterPlugin, MethodCallHandler, Ab
   private surfaceId: string | null = null;
   private binding: FlutterPluginBinding | null = null;
   private isStart = false;
-  private cameraWidth: number = 0;
-  private cameraHeight: number = 0;
-  private scanWidth: number = 384 // xComponent宽度，默认设置384，单位vp
-  private scanHeight: number = 682 // xComponent高度，默认设置682，单位vp
-  private scanCodeRect: Array<scanBarcode.ScanCodeRect> = [] // 扫码结果码图位置
-  private scanBottom: number = 220
-  private displayHeight: number = 0 // 屏幕高度，单位vp
-  private displayWidth: number = 0 // 屏幕宽度，单位vp
+  private scanWidth: number = 1080 // 单位px
+  private scanHeight: number = 1080 // 单位px
+  private returnImage: boolean = false;
+  private cameraResolutionValues: number[] | undefined = undefined;
+  private resolutionRatio = [16/9,4/3,1];   //分辨率比例
 
   private scanWindow: Array<number> | null = null; // scanWindow，扫描区域
-
   private imageBuffer: Uint8Array | null = null;
 
   publishEvent(event: ESObject) {
@@ -117,10 +114,9 @@ export class MobileScannerPlugin implements FlutterPlugin, MethodCallHandler, Ab
     });
     // texture
     const textureRegistry = this.binding!.getTextureRegistry();
-    const textureId = textureRegistry.getTextureId();
-    const surfaceTextureEntry = textureRegistry.registerTexture(textureId);
+    this.textureId = textureRegistry.getTextureId();
+    const surfaceTextureEntry = textureRegistry.registerTexture(this.textureId);
     this.surfaceId = surfaceTextureEntry.getSurfaceId().toString();
-    this.textureId = textureId;
     Log.i(TAG, `surfaceId: ${this.surfaceId}`)
   }
 
@@ -131,6 +127,7 @@ export class MobileScannerPlugin implements FlutterPlugin, MethodCallHandler, Ab
     this.eventChannel?.setStreamHandler(null);
     this.eventChannel = null;
     this.isStart = false;
+    this.imageBuffer = null;
     binding.getTextureRegistry().unregisterTexture(this.textureId);
   }
 
@@ -180,15 +177,12 @@ export class MobileScannerPlugin implements FlutterPlugin, MethodCallHandler, Ab
     const torch: boolean = call.argument("torch") ?? false
     const facing: number = call.argument("facing") ?? 0
     const formats: number[] = call.argument("formats")
-    const returnImage: boolean = call.argument("returnImage") ?? false
+    this.returnImage = call.argument("returnImage") ?? false
     const speed: number = call.argument("speed") ?? 1
     const timeout: number = call.argument("timeout") ?? 250
-    const cameraResolutionValues: number[] | undefined = call.argument("cameraResolution")
+    this.cameraResolutionValues = call.argument("cameraResolution")
     const useNewCameraSelector: boolean = call.argument("useNewCameraSelector") ?? false
-    let cameraResolution = [360.5, 360.5] // 确保返回到dart的数字是 double 类型
-    if (!!cameraResolutionValues && cameraResolutionValues.length >= 2) {
-      cameraResolution = [cameraResolutionValues[0], cameraResolutionValues[1]]
-    }
+
     if (!this.isStart) {
       this.isStart = true;
       let torchable: boolean = hasFlashUnit(this.applicationContext!)
@@ -208,17 +202,6 @@ export class MobileScannerPlugin implements FlutterPlugin, MethodCallHandler, Ab
         enableAlbum: true
       }
       customScan.init(options);
-      // 取浮点数
-      // 设置预览流高度，默认单位：vp
-      this.cameraHeight = px2vp(cameraResolution[1]);
-      if (Number.isInteger(this.cameraHeight)) {
-        this.cameraHeight = this.cameraHeight + 0.00000000001;
-      }
-      // 设置预览流宽度，默认单位：vp
-      this.cameraWidth = px2vp(cameraResolution[0]);
-      if (Number.isInteger(this.cameraWidth)) {
-        this.cameraWidth = this.cameraWidth + 0.00000000001;
-      }
       this.setDisplay()
       this.startScan()
       if (torch) {
@@ -234,8 +217,8 @@ export class MobileScannerPlugin implements FlutterPlugin, MethodCallHandler, Ab
       result.success({
         "textureId": this.textureId,
         "size": {
-          "width": this.cameraWidth,
-          "height": this.cameraHeight
+          "width": this.scanWidth,
+          "height": this.scanHeight
         },
         // "torchable": torchable,
         "currentTorchState": this.getFlashLightStatue(),
@@ -258,50 +241,35 @@ export class MobileScannerPlugin implements FlutterPlugin, MethodCallHandler, Ab
         return;
       }
       // 解析码值结果跳转应用服务页
-      let i = 0
-      let first: boolean = true
       const _r: Barcode[] = result.map(item => {
-        if (first) {
-          first = false
-        } else {
-          i++
-        }
         return {
           displayValue: item.originalValue,
           rawValue: item.originalValue,
           format: Barcode.convertScanType(item.scanType),
           type: BarcodeType.unknown,
           size: {
-            width: this.scanCodeRect[0]?.right - this.scanCodeRect[0]?.left,
-            height: this.scanCodeRect[0]?.bottom - this.scanCodeRect[0]?.top
+            width: this.toDoubleType(item.scanCodeRect!.right - item.scanCodeRect!.left),
+            height: this.toDoubleType(item.scanCodeRect!.bottom - item.scanCodeRect!.top)
           },
           corners: [
-            { x: this.scanCodeRect[i]?.left, y: this.scanCodeRect[i]?.top } as Point,
-            { x: this.scanCodeRect[i]?.right, y: this.scanCodeRect[i]?.top } as Point,
-            { x: this.scanCodeRect[i]?.right, y: this.scanCodeRect[i]?.bottom } as Point,
-            { x: this.scanCodeRect[i]?.left, y: this.scanCodeRect[i]?.bottom } as Point,
-          ].map(i => ({
-            x: i.x / this.scanWidth * this.cameraWidth,
-            y: i.y / this.scanHeight * this.cameraHeight
-          }) as Point)
+            { x: this.toDoubleType(item.scanCodeRect!.left),  y: this.toDoubleType(item.scanCodeRect!.top) } as Point,
+            { x: this.toDoubleType(item.scanCodeRect!.right),  y: this.toDoubleType(item.scanCodeRect!.top) } as Point,
+            { x: this.toDoubleType(item.scanCodeRect!.right),  y: this.toDoubleType(item.scanCodeRect!.bottom) } as Point,
+            { x: this.toDoubleType(item.scanCodeRect!.left),  y: this.toDoubleType(item.scanCodeRect!.bottom) } as Point,
+          ]
         } as Barcode;
       })
-      this.callback(_r, this.imageBuffer, this.cameraWidth, this.cameraHeight);
-      // 扫描完成后需要调用重新扫描继续识别
-      setTimeout(() => {
-        if (this.isStart) {
-          customScan.rescan();
-        }
-      }, 250);
+      this.callback(_r, this.imageBuffer, this.scanWidth, this.scanHeight);
     }
   // 返回相机帧的回调
   private frameCallback: AsyncCallback<customScan.ScanFrame> =
     async (error: BusinessError, frameResult: customScan.ScanFrame) => {
+      this.imageBuffer = null;
       if (error) {
         Log.e(TAG, `Failed to get ScanFrame by callback. Code: ${error.code}, message: ${error.message}`);
         return;
       }
-      if (frameResult && frameResult.scanCodeRects && frameResult.scanCodeRects.length > 0) {
+      if (frameResult && this.returnImage) {
         try {
           const EventWidth = frameResult.width;
           const EventHeight = frameResult.height;
@@ -327,29 +295,10 @@ export class MobileScannerPlugin implements FlutterPlugin, MethodCallHandler, Ab
         } catch (e) {
           Log.e(TAG, `Failed to create imageBuffer`);
         }
-        this.scanCodeRect = [];
-        // 码图位置信息转换
-        this.changeToXComponent(frameResult);
       } else {
         Log.e(TAG, `Failed to get scanCodeRects by callback`);
       }
     }
-
-  // frameCallback横向码图位置信息转换为预览流xComponent对应码图位置信息
-  changeToXComponent(frameResult: customScan.ScanFrame) {
-    if (frameResult && frameResult.scanCodeRects) {
-      let frameHeight = frameResult.height;
-      let ratio = this.scanWidth / frameHeight;
-      frameResult.scanCodeRects.forEach((item) => {
-        this.scanCodeRect.push({
-          left: this.toFixedNumber((frameHeight - item.bottom) * ratio),
-          top: this.toFixedNumber(item.left * ratio),
-          right: this.toFixedNumber((frameHeight - item.top) * ratio),
-          bottom: this.toFixedNumber(item.right * ratio)
-        });
-      });
-    }
-  }
 
   startScan() {
     try {
@@ -359,7 +308,6 @@ export class MobileScannerPlugin implements FlutterPlugin, MethodCallHandler, Ab
         surfaceId: this.surfaceId!,
       };
       customScan.start(viewControl, this.scanCallback, this.frameCallback)
-      Log.i(TAG, 'Scan started successfully');
     } catch (err) {
       Log.e(TAG, `Failed to start scan: ${err.message}`)
     }
@@ -369,17 +317,49 @@ export class MobileScannerPlugin implements FlutterPlugin, MethodCallHandler, Ab
   setDisplay() {
     // 以手机为例计算宽高
     let displayClass = display.getDefaultDisplaySync();
-    this.displayHeight = px2vp(displayClass.height);
-    this.displayWidth = px2vp(displayClass.width);
     if (displayClass !== null) {
-      this.scanWidth = px2vp(displayClass.width);
-      this.scanHeight = Math.round(this.scanWidth * this.cameraWidth / this.cameraHeight);
-      this.scanBottom = Math.max(220, px2vp(displayClass.height) - this.scanHeight);
+      let orientation = displayClass.orientation.valueOf()
+      if (!!this.cameraResolutionValues && this.cameraResolutionValues.length >= 2) {
+        let width = this.cameraResolutionValues[0];
+        let height = this.cameraResolutionValues[1];
+        if (orientation === 0 || orientation === 2) {
+          let radio = height / width;
+          this.scanWidth = this.toDoubleType(px2vp(displayClass.width));
+          if (radio <= this.resolutionRatio[2]) {
+            this.scanHeight = this.scanWidth;
+          }else if (radio <= this.resolutionRatio[1]) {
+            this.scanHeight = this.scanWidth * this.resolutionRatio[1];
+          }else {
+            this.scanHeight = this.scanWidth * this.resolutionRatio[0];
+          }
+        }else {
+          let radio = width / height;
+          this.scanHeight = this.toDoubleType(px2vp(displayClass.height));
+          if (radio <= this.resolutionRatio[2]) {
+            this.scanWidth = this.scanHeight;
+          }else if (radio <= this.resolutionRatio[1]) {
+            this.scanWidth = this.scanHeight * this.resolutionRatio[1];
+          }else {
+            this.scanWidth = this.scanHeight * this.resolutionRatio[0];
+          }
+        }
+      }else {
+        if (orientation === 0 || orientation === 2) {
+          this.scanWidth = this.toDoubleType(px2vp(displayClass.width));
+          this.scanHeight = this.scanWidth;
+        }else {
+          this.scanHeight = this.toDoubleType(px2vp(displayClass.height));
+          this.scanWidth = this.scanHeight;
+        }
+      }
     }
   }
 
-  toFixedNumber(no: number): number {
-    return Number((no).toFixed(1));
+  toDoubleType(number: number): number {
+    if (Number.isInteger(number)){
+      number += 0.00000000001
+    }
+    return number;
   }
 
   async stop(result: MethodResult) {
@@ -440,10 +420,10 @@ export class MobileScannerPlugin implements FlutterPlugin, MethodCallHandler, Ab
         let corners: Array<Point> = []
         if (cornerPoints != undefined && cornerPoints != null) {
           corners = [
-            { x: this.cameraWidth - cornerPoints[0].y, y: cornerPoints[0].x },
-            { x: this.cameraWidth - cornerPoints[1].y, y: cornerPoints[1].x },
-            { x: this.cameraWidth - cornerPoints[2].y, y: cornerPoints[2].x },
-            { x: this.cameraWidth - cornerPoints[3].y, y: cornerPoints[3].x },
+            { x: this.toDoubleType(this.scanWidth - cornerPoints[0].y), y: this.toDoubleType(cornerPoints[0].x)},
+            { x: this.toDoubleType(this.scanWidth - cornerPoints[1].y), y: this.toDoubleType(cornerPoints[1].x)},
+            { x: this.toDoubleType(this.scanWidth - cornerPoints[2].y), y: this.toDoubleType(cornerPoints[2].x)},
+            { x: this.toDoubleType(this.scanWidth - cornerPoints[3].y), y: this.toDoubleType(cornerPoints[3].x)},
           ]
         }
         return {
@@ -498,45 +478,54 @@ export class MobileScannerPlugin implements FlutterPlugin, MethodCallHandler, Ab
       }
     });
     if (barcodes.length == 0) {
-      return
-    }
-    let barcodeArrs: BarcodeMap[] = [];
-    for (let i = 0; i < barcodes.length; i++) {
-      let item: Barcode = barcodes[i];
-      barcodeArrs.push({
-        displayValue: item.displayValue,
-        rawValue: item.rawValue,
-        corners: item.corners,
-        format: item.format,
-        type: item.type,
-        size: item.size
-      });
-    }
-    if (image) {
-      const imageMap: ImageMap = {
-        bytes: image,
-        width: width,
-        height: height
+      customScan.rescan();
+    }else {
+      let barcodeArrs: BarcodeMap[] = [];
+      for (let i = 0; i < barcodes.length; i++) {
+        let item: Barcode = barcodes[i];
+        barcodeArrs.push({
+          displayValue: item.displayValue,
+          rawValue: item.rawValue,
+          corners: item.corners,
+          format: item.format,
+          type: item.type,
+          size: item.size
+        });
       }
-      this.publishEvent({
-        "name": "barcode",
-        "data": barcodeArrs,
-        "image": imageMap
-      })
-    } else {
-      this.publishEvent({
-        "name": "barcode",
-        "data": barcodeArrs
-      })
+      if (image) {
+        const imageMap: ImageMap = {
+          bytes: image,
+          width: width,
+          height: height
+        }
+        this.publishEvent({
+          "name": "barcode",
+          "data": barcodeArrs,
+          "image": imageMap
+        })
+      } else {
+        if(!this.returnImage) {
+          this.publishEvent({
+            "name": "barcode",
+            "data": barcodeArrs
+          })
+        }
+      }
+      // 扫描完成后需要调用重新扫描继续识别
+      setTimeout(() => {
+        if (this.isStart) {
+          customScan.rescan();
+        }
+      }, this.returnImage ? 250 : 100);
     }
   }
 
   private isBarcodeInScanWindow(barcode: Barcode): boolean {
     const corners = barcode.corners;
-    const left = Math.round(this.scanWindow![0] * this.cameraWidth);
-    const top = Math.round(this.scanWindow![1] * this.cameraHeight);
-    const right = Math.round(this.scanWindow![2] * this.cameraWidth);
-    const bottom = Math.round(this.scanWindow![3] * this.cameraHeight);
+    const left = Math.round(this.scanWindow![0] * this.scanWidth);
+    const top = Math.round(this.scanWindow![1] * this.scanHeight);
+    const right = Math.round(this.scanWindow![2] * this.scanWidth);
+    const bottom = Math.round(this.scanWindow![3] * this.scanHeight);
     return corners.reduce((r, item) => r && item.x >= left && item.x <= right && item.y >= top && item.y <= bottom,
       true)
   }
