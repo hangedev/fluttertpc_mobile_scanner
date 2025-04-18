@@ -88,6 +88,14 @@ export class MobileScannerPlugin implements FlutterPlugin, MethodCallHandler, Ab
   private returnImage: boolean = false;
   private cameraResolutionValues: number[] | undefined = undefined;
   private resolutionRatio = [16/9,4/3,1];   //分辨率比例
+  private torch: boolean = false
+  private facing: number = 0
+  private formats: number[] | undefined = undefined
+  private speed: number = 1
+  private timeout: number = 250
+  private useNewCameraSelector: boolean = false
+  private options: scanBarcode.ScanOptions = {};
+  private retryScanTimes: number = 0;
 
   private scanWindow: Array<number> | null = null; // scanWindow，扫描区域
   private imageBuffer: Uint8Array | null = null;
@@ -173,68 +181,75 @@ export class MobileScannerPlugin implements FlutterPlugin, MethodCallHandler, Ab
   }
 
   async start(call: MethodCall, result: MethodResult) {
-    const torch: boolean = call.argument("torch") ?? false
-    const facing: number = call.argument("facing") ?? 0
-    const formats: number[] = call.argument("formats")
+    this.torch = call.argument("torch") ?? false
+    this.facing = call.argument("facing") ?? 0
+    this.formats = call.argument("formats")
     this.returnImage = call.argument("returnImage") ?? false
-    const speed: number = call.argument("speed") ?? 1
-    const timeout: number = call.argument("timeout") ?? 250
+    this.speed = call.argument("speed") ?? 1
+    this.timeout = call.argument("timeout") ?? 250
     this.cameraResolutionValues = call.argument("cameraResolution")
-    const useNewCameraSelector: boolean = call.argument("useNewCameraSelector") ?? false
+    this.useNewCameraSelector = call.argument("useNewCameraSelector") ?? false
 
     this.scanWindow = null;
-    if (this.isStart){
-      this.stop(null);
+    this.retryScanTimes = 0;
+    this.isStart = true;
+    let torchable: boolean = hasFlashUnit(this.applicationContext!)
+    let scanTypes = [scanCore.ScanType.ALL]
+    if (this.formats) {
+      scanTypes = []
+      this.formats.forEach((format: number) => {
+        let type = Barcode.convertToScanType(format)
+        if (type != scanCore.ScanType.FORMAT_UNKNOWN) {
+          scanTypes.push(type)
+        }
+      })
     }
+    this.options = {
+      scanTypes: scanTypes,
+      enableMultiMode: true,
+      enableAlbum: true
+    }
+    this.startCamera();
+    // dart 中接收的 width 和 height 会转换为 double 类型，返回整数会导致异常
+    result.success({
+      "textureId": this.textureId,
+      "size": {
+        "width": this.scanWidth,
+        "height": this.scanHeight
+      },
+      // "torchable": torchable,
+      "currentTorchState": this.getFlashLightStatue(),
+      "numberOfCameras": 1
+    });
+  }
 
-    if (!this.isStart) {
-      this.isStart = true;
-      let torchable: boolean = hasFlashUnit(this.applicationContext!)
-      let scanTypes = [scanCore.ScanType.ALL]
-      if (formats) {
-        scanTypes = []
-        formats.forEach((format: number) => {
-          let type = Barcode.convertToScanType(format)
-          if (type != scanCore.ScanType.FORMAT_UNKNOWN) {
-            scanTypes.push(type)
-          }
-        })
-      }
-      const options: scanBarcode.ScanOptions = {
-        scanTypes: scanTypes,
-        enableMultiMode: true,
-        enableAlbum: true
-      }
-      customScan.init(options);
-      this.setDisplay()
-      this.startScan()
-      if (torch) {
-        customScan.openFlashLight()
-      } else {
-        customScan.closeFlashLight()
-      }
-      this.publishEvent({
-        name: 'torchState',
-        data: customScan.getFlashLightStatus() ? TorchState.on : TorchState.off
-      });
-      // dart 中接收的 width 和 height 会转换为 double 类型，返回整数会导致异常
-      result.success({
-        "textureId": this.textureId,
-        "size": {
-          "width": this.scanWidth,
-          "height": this.scanHeight
-        },
-        // "torchable": torchable,
-        "currentTorchState": this.getFlashLightStatue(),
-        "numberOfCameras": 1
-      });
-    } else {
-      result.error(
-        "MobileScanner",
-        "Called start() while already started",
-        null
-      )
+  // 重启相机流
+  retryCamera(error: BusinessError) {
+    if (this.retryScanTimes < 3 && error.code === scanCore.ScanErrorCode.INTERNAL_ERROR) {
+      this.retryScanTimes++;
+      let timeId = setTimeout(async () => {
+        // 先暂停并释放相机流
+        await this.stop(null);
+        // 重启相机流
+        this.startCamera();
+        clearTimeout(timeId);
+      }, 100)
     }
+  }
+  // 启动相机流
+  startCamera() {
+    customScan.init(this.options);
+    this.setDisplay()
+    this.startScan()
+    if (this.torch) {
+      customScan.openFlashLight()
+    } else {
+      customScan.closeFlashLight()
+    }
+    this.publishEvent({
+      name: 'torchState',
+      data: customScan.getFlashLightStatus() ? TorchState.on : TorchState.off
+    });
   }
 
   // 返回自定义扫描结果的回调
@@ -369,11 +384,11 @@ export class MobileScannerPlugin implements FlutterPlugin, MethodCallHandler, Ab
   async stop(result: MethodResult | null) {
     if (this.isStart) {
       try {
+        this.isStart = false;
         await customScan.stop();
         await customScan.release();
-        this.isStart = false;
       } catch (e) {
-        if (result) this.isStart = true;
+        this.isStart = true;
       }
     }
     result?.success(null)
