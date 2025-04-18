@@ -518,7 +518,11 @@ export class MobileScannerPlugin implements FlutterPlugin, MethodCallHandler, Ab
       // 扫描完成后需要调用重新扫描继续识别
       setTimeout(() => {
         if (this.isStart) {
-          customScan.rescan();
+          try {
+            customScan.rescan();
+          } catch (err) {
+            Log.e(TAG, `Failed to rescan: ${err.message}`)
+          }
         }
       }, this.returnImage ? 250 : 100);
     }
