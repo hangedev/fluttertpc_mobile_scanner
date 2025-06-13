@@ -142,4 +142,4 @@ Open  `entry/src/main/resources/base/element/string.json` and add the following 
 ## 7. License
 
 
-This project is licensed under [The MIT License (MIT)](LICENSE).
+This project is licensed under [BSD 3-Clause License](LICENSE).
