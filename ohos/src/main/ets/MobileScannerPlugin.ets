@@ -428,10 +428,14 @@ export class MobileScannerPlugin implements FlutterPlugin, MethodCallHandler, Ab
     let inputImage: detectBarcode.InputImage = { uri: call.args.get("filePath") }
     detectBarcode.decode(inputImage, options, (error: BusinessError, scanResult: Array<scanBarcode.ScanResult>) => {
       if (error && error.code) {
+        result.error("MOBILE_SCANNER_BARCODE_ERROR", JSON.stringify(error) , null)
         return
       }
       if (scanResult.length == 0) {
-        result.success(false)
+        result.success({
+          name: 'barcode',
+          data: null
+        })
         return
       }
       const barcodes: Barcode[] = scanResult.map(item => {
