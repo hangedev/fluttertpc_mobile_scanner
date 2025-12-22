@@ -367,7 +367,11 @@ export class MobileScannerPlugin implements FlutterPlugin, MethodCallHandler, Ab
         await customScan.stop();
         await customScan.release();
       } catch (e) {
-        this.isStart = true;
+        try {
+          await customScan.release();
+        } catch (e) {
+          this.isStart = true;
+        }
       }
     }
     result?.success(null)
