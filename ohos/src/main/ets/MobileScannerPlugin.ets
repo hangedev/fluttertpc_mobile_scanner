@@ -256,6 +256,7 @@ export class MobileScannerPlugin implements FlutterPlugin, MethodCallHandler, Ab
   private scanCallback: AsyncCallback<scanBarcode.ScanResult[]> =
     async (error: BusinessError, result: scanBarcode.ScanResult[]) => {
       if (error && error.code) {
+        this.retryCamera(error);
         Log.e(TAG, `Failed to get ScanResult by callback. Code: ${error.code}, message: ${error.message}`);
         return;
       }
@@ -388,7 +389,11 @@ export class MobileScannerPlugin implements FlutterPlugin, MethodCallHandler, Ab
         await customScan.stop();
         await customScan.release();
       } catch (e) {
-        this.isStart = true;
+        try {
+          await customScan.release();
+        } catch (e) {
+          this.isStart = true;
+        }
       }
     }
     result?.success(null)
