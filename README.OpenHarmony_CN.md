@@ -24,6 +24,7 @@ dependencies:
   fluttertpc_mobile_scanner:
     git:
       url: https://gitcode.com/openharmony-sig/fluttertpc_mobile_scanner.git
+      ref: br_v7.1.4_ohos
 
 ...
 ```
@@ -47,8 +48,7 @@ flutter pub get
 
 在以下版本中已测试通过
 
-1. Flutter: 3.7.12-ohos-1.0.6; SDK: 5.0.0(12); IDE: DevEco Studio: 5.0.13.200; ROM: 5.1.0.120 SP3;
-2. Flutter: 3.22.1-ohos-1.0.1; SDK: 5.0.0(12); IDE: DevEco Studio: 5.0.13.200; ROM: 5.1.0.120 SP3;
+1. Flutter: 3.35.7-ohos-0.0.1; SDK: 6.0.1(21); IDE: DevEco Studio: 6.0.1.260; ROM: 6.0.0.120 SP6;
 
 ### 2.2 权限要求
 
@@ -100,9 +100,10 @@ flutter pub get
 | stop             | 停止扫码服务      |function | /                                                                    | Future<void>            | yes          |
 | analyzeImage     | 识别本地的图像文件   |function | String path, {List<BarcodeFormat> formats = const <BarcodeFormat>[]} | Future<BarcodeCapture?> | yes          |
 | setZoomScale     | 设置相机变焦比     |function | double zoomScale                                                     | Future<void>            | yes          |
-| resetZoomScale   | 重置相机变焦比为1   |function | /                                                                    | Future<void>            | yes          |
+| resetZoomScale   | 重置相机变焦比为初始值   |function | /                                                                    | Future<void>            | yes          |
 | updateScanWindow | 更新扫码框大小     |function | Rect? window                                                         | Future<void>            | yes          |
 | switchCamera     | 切换摄像头       |function | /                                                                    | Future<void>            | yes          |
+| setFocusPoint     | 设置相机焦点       |function | Offset position                                                                    | Future<void>            | yes          |
 
 
 ## 4. 属性
@@ -119,9 +120,12 @@ flutter pub get
 | formats              | 码制式格式                                    | List<BarcodeFormat>?    | yes          |
 | detectionTimeoutMs   | 设置扫码超时时间，单位毫秒                        | int                     | no           |
 | autoStart            | 初始化时自动启动扫码服务                          | bool                    | yes          |
-| cameraResolution     | 相机分辨率                                    | Size                    | no           |
+| cameraResolution     | 相机分辨率                                    | Size                    | yes           |
 | useNewCameraSelector | 使用新的分辨率选择器                             | bool                    | no           |
 | detectionSpeed       | 设置扫码检测速度                                | DetectionSpeed          | no           |
+| invertImage          | 处理图片颜色反转                             | bool                    | yes           |
+| autoZoom             | 是否自动变焦                                   | bool                    | yes           |
+| initialZoom          | 初始化相机变焦比                                | double?                 | yes           |
 
 ### Parameters
 

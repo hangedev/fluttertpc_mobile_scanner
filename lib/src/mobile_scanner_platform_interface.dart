@@ -83,11 +83,21 @@ abstract class MobileScannerPlatform extends PlatformInterface {
     throw UnimplementedError('setZoomScale() has not been implemented.');
   }
 
+  /// Set the focus position for the camera.
+  ///
+  /// The provided point should be in the range `(0,0) - (1,1)`, both inclusive,
+  /// where `(0,0)` is the top left and `(1,1)` is the bottom right.
+  Future<void> setFocusPoint(Offset position) {
+    throw UnimplementedError('setFocusPoint() has not been implemented.');
+  }
+
   /// Start the barcode scanner and prepare a scanner view.
   ///
-  /// Upon calling this method, the necessary camera permission will be requested.
+  /// Upon calling this method, the necessary camera permission will be
+  /// requested.
   ///
-  /// The given [StartOptions.cameraDirection] is used as the direction for the camera that needs to be set up.
+  /// The given [StartOptions.cameraDirection] is used as the direction for the
+  /// camera that needs to be set up.
   Future<MobileScannerViewAttributes> start(StartOptions startOptions) {
     throw UnimplementedError('start() has not been implemented.');
   }
@@ -109,7 +119,8 @@ abstract class MobileScannerPlatform extends PlatformInterface {
 
   /// Update the scan window to the given [window] rectangle.
   ///
-  /// Any barcodes that do not intersect with the given [window] will be ignored.
+  /// Any barcodes that do not intersect with the given [window] will be
+  /// ignored.
   ///
   /// If [window] is `null`, the scan window will be reset to the full screen.
   Future<void> updateScanWindow(Rect? window) {

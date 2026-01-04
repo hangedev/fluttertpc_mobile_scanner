@@ -1,3 +1,6 @@
+/// @docImport 'package:mobile_scanner/src/objects/barcode_capture.dart';
+library;
+
 import 'dart:typed_data';
 import 'dart:ui';
 
@@ -37,58 +40,56 @@ class Barcode {
 
   /// Creates a new [Barcode] instance from the given [data].
   factory Barcode.fromNative(Map<Object?, Object?> data) {
-    final Map<Object?, Object?>? calendarEvent =
-        data['calendarEvent'] as Map<Object?, Object?>?;
-    final Map<Object?, Object?>? contactInfo =
-        data['contactInfo'] as Map<Object?, Object?>?;
-    final List<Object?>? corners = data['corners'] as List<Object?>?;
-    final Map<Object?, Object?>? driverLicense =
-        data['driverLicense'] as Map<Object?, Object?>?;
-    final Map<Object?, Object?>? email =
-        data['email'] as Map<Object?, Object?>?;
-    final Map<Object?, Object?>? geoPoint =
-        data['geoPoint'] as Map<Object?, Object?>?;
-    final Map<Object?, Object?>? phone =
-        data['phone'] as Map<Object?, Object?>?;
-    final Map<Object?, Object?>? sms = data['sms'] as Map<Object?, Object?>?;
-    final Map<Object?, Object?>? size = data['size'] as Map<Object?, Object?>?;
-    final Map<Object?, Object?>? url = data['url'] as Map<Object?, Object?>?;
-    final Map<Object?, Object?>? wifi = data['wifi'] as Map<Object?, Object?>?;
+    final calendarEvent = data['calendarEvent'] as Map<Object?, Object?>?;
+    final contactInfo = data['contactInfo'] as Map<Object?, Object?>?;
+    final corners = data['corners'] as List<Object?>?;
+    final driverLicense = data['driverLicense'] as Map<Object?, Object?>?;
+    final email = data['email'] as Map<Object?, Object?>?;
+    final geoPoint = data['geoPoint'] as Map<Object?, Object?>?;
+    final phone = data['phone'] as Map<Object?, Object?>?;
+    final sms = data['sms'] as Map<Object?, Object?>?;
+    final size = data['size'] as Map<Object?, Object?>?;
+    final url = data['url'] as Map<Object?, Object?>?;
+    final wifi = data['wifi'] as Map<Object?, Object?>?;
 
-    final double? barcodeWidth = size?['width'] as double?;
-    final double? barcodeHeight = size?['height'] as double?;
+    final barcodeWidth = size?['width'] as double?;
+    final barcodeHeight = size?['height'] as double?;
 
     return Barcode(
-      calendarEvent: calendarEvent == null
-          ? null
-          : CalendarEvent.fromNative(calendarEvent),
+      calendarEvent:
+          calendarEvent == null
+              ? null
+              : CalendarEvent.fromNative(calendarEvent),
       contactInfo:
           contactInfo == null ? null : ContactInfo.fromNative(contactInfo),
-      corners: corners == null
-          ? const <Offset>[]
-          : List.unmodifiable(
-              corners
-                  .cast<Map<Object?, Object?>>()
-                  .map((Map<Object?, Object?> e) {
-                final double x = e['x']! as double;
-                final double y = e['y']! as double;
+      corners:
+          corners == null
+              ? const <Offset>[]
+              : List.unmodifiable(
+                corners.cast<Map<Object?, Object?>>().map((
+                  Map<Object?, Object?> e,
+                ) {
+                  final x = e['x']! as double;
+                  final y = e['y']! as double;
 
-                return Offset(x, y);
-              }),
-            ),
+                  return Offset(x, y);
+                }),
+              ),
       displayValue: data['displayValue'] as String?,
-      driverLicense: driverLicense == null
-          ? null
-          : DriverLicense.fromNative(driverLicense),
+      driverLicense:
+          driverLicense == null
+              ? null
+              : DriverLicense.fromNative(driverLicense),
       email: email == null ? null : Email.fromNative(email),
       format: BarcodeFormat.fromRawValue(data['format'] as int? ?? -1),
       geoPoint: geoPoint == null ? null : GeoPoint.fromNative(geoPoint),
       phone: phone == null ? null : Phone.fromNative(phone),
       rawBytes: data['rawBytes'] as Uint8List?,
       rawValue: data['rawValue'] as String?,
-      size: barcodeWidth == null || barcodeHeight == null
-          ? Size.zero
-          : Size(barcodeWidth, barcodeHeight),
+      size:
+          barcodeWidth == null || barcodeHeight == null
+              ? Size.zero
+              : Size(barcodeWidth, barcodeHeight),
       sms: sms == null ? null : SMS.fromNative(sms),
       type: BarcodeType.fromRawValue(data['type'] as int? ?? 0),
       url: url == null ? null : UrlBookmark.fromNative(url),
@@ -102,12 +103,20 @@ class Barcode {
   /// The contact information that is embedded in the barcode.
   final ContactInfo? contactInfo;
 
-  /// The four corner points of the barcode,
-  /// in clockwise order, starting with the top-left point.
+  /// The corner points of the barcode, relative to the [size] of the barcode.
   ///
-  /// Due to the possible perspective distortions, this is not necessarily a rectangle.
+  /// On Android, iOS and MacOS, this is a list of four points,
+  /// in clockwise direction, starting with the top left.
+  ///
+  /// On the web, the amount of points and their order
+  /// is dependent on the type of barcode that was detected.
+  ///
+  /// Due to the possible perspective distortions,
+  /// the points do not necessarily form a rectangle.
   ///
   /// This list is empty if the corners can not be determined.
+  ///
+  /// See also [scaleCorners], to scale the corners to a different size.
   final List<Offset> corners;
 
   /// The barcode value in a user-friendly format.
@@ -152,7 +161,8 @@ class Barcode {
   /// This is null if the raw value is not available.
   final String? rawValue;
 
-  /// The normalized size of the barcode bounding box.
+  /// The normalized size of the barcode bounding box,
+  /// relative to the [BarcodeCapture.size] of the original barcode capture.
   ///
   /// If the bounding box is unavailable, this will be [Size.zero].
   final Size size;
@@ -178,4 +188,44 @@ class Barcode {
 
   /// The Wireless network information that is embedded in the barcode.
   final WiFi? wifi;
+
+  /// Scale the [corners] of this [Barcode] to the given [targetSize].
+  ///
+  /// Returns the list of scaled offsets,
+  /// or an empty list, if the [corners] is empty.
+  ///
+  /// This method can be used to scale the [corners] of a [Barcode]
+  /// from the original camera coordinate space, into widget coordinate space.
+  ///
+  /// For example, given the `BuildContext` of a widget:
+  ///
+  /// ```dart
+  /// final BuildContext context;
+  ///
+  /// final Barcode barcode = Barcode(
+  ///   size: Size(60, 60),
+  ///   corners: [
+  ///     Offset(10, 10),
+  ///     Offset(50, 10),
+  ///     Offset(50, 50),
+  ///     Offset(10, 50),
+  ///   ],
+  /// );
+  ///
+  /// final List<Offset> scaledCorners = barcode.scaleCorners(
+  ///   context.size ?? Size.zero
+  /// );
+  /// ```
+  List<Offset> scaleCorners(Size targetSize) {
+    // The size and corners are in the same coordinate space,
+    // which is the camera input.
+    // If the barcode size is unknown, scale to 0,0.
+    final scaleX = size.width > 0 ? targetSize.width / size.width : 0;
+    final scaleY = size.height > 0 ? targetSize.height / size.height : 0;
+
+    return [
+      for (final Offset offset in corners)
+        Offset(offset.dx * scaleX, offset.dy * scaleY),
+    ];
+  }
 }

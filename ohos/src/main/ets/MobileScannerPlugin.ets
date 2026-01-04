@@ -27,20 +27,109 @@ import { AbilityAware, AbilityPluginBinding, ByteBuffer } from '@ohos/flutter_oh
 import { UIAbility } from '@kit.AbilityKit';
 import { cameraPermission, checkPermissions, requestPermissions } from './CameraPermissions';
 import { customScan, scanBarcode, scanCore, detectBarcode } from '@kit.ScanKit';
-import EventChannel, { EventSink } from '@ohos/flutter_ohos/src/main/ets/plugin/common/EventChannel';
+import EventChannel, { EventSink, StreamHandler } from '@ohos/flutter_ohos/src/main/ets/plugin/common/EventChannel';
 import { Barcode, BarcodeFormat, BarcodeType } from './Barcode';
-import { AsyncCallback, BusinessError } from '@kit.BasicServicesKit';
+import { AsyncCallback, BusinessError, Callback } from '@kit.BasicServicesKit';
 import { display } from '@kit.ArkUI';
 import { Point } from '@ohos.UiTest';
 import { hasFlashUnit, getCameraManager } from './CameraUtil';
 import { image } from '@kit.ImageKit';
 import { camera } from '@kit.CameraKit';
+import { effectKit } from '@kit.ArkGraphics2D';
+import sensor from '@ohos.sensor';
 
 const TAG: string = "MobileScannerPlugin";
 
 enum TorchState {
   off = 0,
   on = 1
+}
+
+enum NativeOrientation {
+  portraitUp = 'PORTRAIT_UP',
+  portraitDown = 'PORTRAIT_DOWN',
+  landscapeLeft = 'LANDSCAPE_LEFT',
+  landscapeRight = 'LANDSCAPE_RIGHT',
+}
+
+enum Angle {
+  ZERO = 0,
+  PLUS_45 = 45,
+  MINUS_45 = -45,
+  PLUS_135 = 135,
+  MINUS_135 = -135,
+}
+
+class DeviceOrientationListener implements StreamHandler {
+  private eventSink: EventSink | null = null;
+  private lastOrientation: NativeOrientation = NativeOrientation.portraitUp;
+  private orientationCallback: Callback<sensor.OrientationResponse> | null = null;
+  private X: number = 0;
+  private Y: number = 0;
+  
+  constructor() {
+  }
+  
+  onListen(args: Object, eventSink: EventSink): void {
+    this.eventSink = eventSink;
+    this.start();
+  }
+  
+  onCancel(args: Object): void {
+    this.eventSink = null;
+    this.stop();
+  }
+
+  calculateSensorOrientation(data: sensor.OrientationResponse): NativeOrientation {
+    if (!data) {
+      return NativeOrientation.portraitUp;
+    }
+    this.X = data.beta;
+    this.Y = data.gamma;
+    if ((this.X > Angle.MINUS_135 && this.X < Angle.ZERO) || (this.X >= Angle.ZERO && this.X < Angle.PLUS_45)) {
+      if (this.Y <= Angle.PLUS_45 && this.Y >= Angle.MINUS_45) {
+        return NativeOrientation.portraitUp;
+      }
+      if ((this.Y > Angle.MINUS_135 && this.Y < Angle.ZERO)) {
+        return NativeOrientation.landscapeRight;
+      } else {
+        return NativeOrientation.landscapeLeft;
+      }
+    } else {
+      if (this.Y <= Angle.PLUS_45 && this.Y >= Angle.MINUS_45) {
+        return NativeOrientation.portraitDown;
+      }
+      if ((this.Y > Angle.MINUS_135 && this.Y < Angle.ZERO)) {
+        return NativeOrientation.landscapeRight;
+      } else {
+        return NativeOrientation.landscapeLeft;
+      }
+    }
+  }
+  
+  start(): void {
+    // 监听显示方向变化
+    this.orientationCallback = (data: sensor.OrientationResponse) => {
+      let newOrientation: NativeOrientation = this.calculateSensorOrientation(data);
+      if (newOrientation != this.lastOrientation) {
+        this.lastOrientation = newOrientation;
+        this.eventSink?.success(newOrientation);
+      }
+    }
+    sensor.on(sensor.SensorId.ORIENTATION, this.orientationCallback);
+  }
+
+  stop(): void {
+    // 移除显示方向变化监听
+    if (this.orientationCallback) {
+      try {
+        sensor.off(sensor.SensorId.ORIENTATION, this.orientationCallback);
+        this.orientationCallback = null;
+      } catch (error) {
+        Log.e(TAG, 'Failed to unregister callback. Code: ' + JSON.stringify(error));
+      }
+    }
+  }
 }
 
 export class MobileScannerPlugin implements FlutterPlugin, MethodCallHandler, AbilityAware {
@@ -80,6 +169,11 @@ export class MobileScannerPlugin implements FlutterPlugin, MethodCallHandler, Ab
   private useNewCameraSelector: boolean = false
   private options: scanBarcode.ScanOptions = {};
   private retryScanTimes: number = 0;
+  private invertImage: boolean = false;
+  private autoZoom: boolean = false;
+  private initialZoom: number  = 1;
+  private deviceOrientationChannel: EventChannel | null = null;
+  private deviceOrientationListener: DeviceOrientationListener | null = null;
 
   private scanWindow: Array<number> | null = null; // scanWindow，扫描区域
   private imageBuffer: Uint8Array | null = null;
@@ -103,6 +197,12 @@ export class MobileScannerPlugin implements FlutterPlugin, MethodCallHandler, Ab
       onCancel: () => {
       }
     });
+    
+    // Initialize device orientation channel
+    this.deviceOrientationListener = new DeviceOrientationListener();
+    this.deviceOrientationChannel = new EventChannel(binding.getBinaryMessenger(), "dev.steenbakker.mobile_scanner/scanner/deviceOrientation");
+    this.deviceOrientationChannel.setStreamHandler(this.deviceOrientationListener);
+    
     // texture
     const textureRegistry = this.binding!.getTextureRegistry();
     this.textureId = textureRegistry.getTextureId();
@@ -117,6 +217,13 @@ export class MobileScannerPlugin implements FlutterPlugin, MethodCallHandler, Ab
     this.methodChannel = null;
     this.eventChannel?.setStreamHandler(null);
     this.eventChannel = null;
+    
+    // Clean up device orientation channel
+    this.deviceOrientationChannel?.setStreamHandler(null);
+    this.deviceOrientationListener?.stop();
+    this.deviceOrientationChannel = null;
+    this.deviceOrientationListener = null;
+    
     this.isStart = false;
     this.scanWindow = null;
     this.imageBuffer = null;
@@ -145,7 +252,7 @@ export class MobileScannerPlugin implements FlutterPlugin, MethodCallHandler, Ab
         });
       } else if (call.method === "start") {
         this.start(call, result)
-      } else if (call.method === "torch") {
+      } else if (call.method === "toggleTorch") {
         this.toggleTorch(call, result)
       } else if (call.method === "stop") {
         this.stop(result)
@@ -159,6 +266,8 @@ export class MobileScannerPlugin implements FlutterPlugin, MethodCallHandler, Ab
         this.updateScanWindow(call, result)
       }  else if (call.method === "pause") {
         this.pause(call, result)
+      } else if (call.method === "setFocus") {
+        this.setFocus(call, result)
       } else {
         result.notImplemented()
       }
@@ -176,6 +285,9 @@ export class MobileScannerPlugin implements FlutterPlugin, MethodCallHandler, Ab
     this.timeout = call.argument("timeout") ?? 250
     this.cameraResolutionValues = call.argument("cameraResolution")
     this.useNewCameraSelector = call.argument("useNewCameraSelector") ?? false
+    this.autoZoom = call.argument("autoZoom") ?? false
+    this.initialZoom = call.argument("initialZoom") ?? 1
+    this.invertImage = call.argument("invertImage") ?? false
 
     this.scanWindow = null;
     this.retryScanTimes = 0;
@@ -204,7 +316,8 @@ export class MobileScannerPlugin implements FlutterPlugin, MethodCallHandler, Ab
         "height": this.scanHeight
       },
       "torchable": hasFlashUnit(this.applicationContext!),
-      "numberOfCameras": 1
+      "numberOfCameras": 1,
+      "currentTorchState": customScan.getFlashLightStatus() ? TorchState.on : TorchState.off
     });
   }
 
@@ -230,6 +343,12 @@ export class MobileScannerPlugin implements FlutterPlugin, MethodCallHandler, Ab
       customScan.openFlashLight()
     } else {
       customScan.closeFlashLight()
+    }
+    customScan.setZoom(this.initialZoom)
+    if (this.autoZoom) {
+      customScan.setAutoZoomEnabled(true)
+    } else {
+      customScan.setAutoZoomEnabled(false)
     }
     this.publishEvent({
       name: 'torchState',
@@ -295,6 +414,16 @@ export class MobileScannerPlugin implements FlutterPlugin, MethodCallHandler, Ab
           let pixelMap: image.PixelMap = await imageResource.createPixelMap(opts)
           // 修正相机预览流方向
           pixelMap.rotateSync(camera.ImageRotation.ROTATION_90)
+          
+          // 应用颜色反转效果
+          if (this.invertImage) {
+            const filter = effectKit.createEffect(pixelMap);
+            if (filter) {
+              filter.invert();
+            }
+            pixelMap = await filter.getEffectPixelMap();
+          }
+          
           let packer: image.ImagePacker = image.createImagePacker()
           let packingOpt: image.PackingOption = { format: "image/jpeg", quality: 100 }
           let imgBuffer = await packer.packing(pixelMap, packingOpt);
@@ -469,6 +598,10 @@ export class MobileScannerPlugin implements FlutterPlugin, MethodCallHandler, Ab
     let zoomValue: number = call.args as number;
     try {
       customScan.setZoom(zoomValue);
+      this.publishEvent({
+        name: 'zoomScaleState',
+        data: zoomValue
+      });
       result.success(true);
     } catch (error) {
       result.success(false);
@@ -477,7 +610,11 @@ export class MobileScannerPlugin implements FlutterPlugin, MethodCallHandler, Ab
 
   resetScale(result: MethodResult) {
     try {
-      customScan.setZoom(1);
+      customScan.setZoom(this.initialZoom);
+      this.publishEvent({
+        name: 'zoomScaleState',
+        data: this.initialZoom
+      });
       result.success(true);
     } catch (error) {
       result.success(false);
@@ -554,5 +691,16 @@ export class MobileScannerPlugin implements FlutterPlugin, MethodCallHandler, Ab
       name: 'torchState',
       data: customScan.getFlashLightStatus() ? TorchState.on : TorchState.off
     });
+  }
+
+  setFocus(call: MethodCall, result: MethodResult) {
+    let x: number = call.argument("dx");
+    let y: number = call.argument("dy");
+    try {
+      customScan.setFocusPoint({x:x, y:y});
+      result.success(true);
+    } catch (error) {
+      result.success(false);
+    }
   }
 }
