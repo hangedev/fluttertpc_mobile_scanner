@@ -4,15 +4,21 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:mobile_scanner/src/enums/barcode_format.dart';
+import 'package:mobile_scanner/src/enums/camera_facing.dart';
 import 'package:mobile_scanner/src/enums/mobile_scanner_authorization_state.dart';
 import 'package:mobile_scanner/src/enums/mobile_scanner_error_code.dart';
 import 'package:mobile_scanner/src/enums/torch_state.dart';
+import 'package:mobile_scanner/src/method_channel/android_surface_producer_delegate.dart';
+import 'package:mobile_scanner/src/method_channel/ohos_surface_producer_delegate.dart';
+import 'package:mobile_scanner/src/method_channel/rotated_preview.dart';
+import 'package:mobile_scanner/src/method_channel/surface_producer_delegate.dart';
 import 'package:mobile_scanner/src/mobile_scanner_exception.dart';
 import 'package:mobile_scanner/src/mobile_scanner_platform_interface.dart';
 import 'package:mobile_scanner/src/mobile_scanner_view_attributes.dart';
 import 'package:mobile_scanner/src/objects/barcode.dart';
 import 'package:mobile_scanner/src/objects/barcode_capture.dart';
 import 'package:mobile_scanner/src/objects/start_options.dart';
+import 'package:mobile_scanner/src/utils/parse_device_orientation_extension.dart';
 
 /// An implementation of [MobileScannerPlatform] that uses method channels.
 class MethodChannelMobileScanner extends MobileScannerPlatform {
@@ -24,10 +30,22 @@ class MethodChannelMobileScanner extends MobileScannerPlatform {
   @visibleForTesting
   static const String kBarcodeErrorEventName = 'MOBILE_SCANNER_BARCODE_ERROR';
 
+  /// The name of the error event that is sent when an operation is not
+  /// supported.
+  @visibleForTesting
+  static const String kUnsupportdOperationErrorEventName =
+      'MOBILE_SCANNER_UNSUPPORTED_OPERATION';
+
   /// The method channel used to interact with the native platform.
   @visibleForTesting
   final methodChannel = const MethodChannel(
     'dev.steenbakker.mobile_scanner/scanner/method',
+  );
+
+  /// The event channel that sends back device orientation change events.
+  @visibleForTesting
+  final deviceOrientationEventChannel = const EventChannel(
+    'dev.steenbakker.mobile_scanner/scanner/deviceOrientation',
   );
 
   /// The event channel that sends back scanned barcode events.
@@ -36,8 +54,21 @@ class MethodChannelMobileScanner extends MobileScannerPlatform {
     'dev.steenbakker.mobile_scanner/scanner/event',
   );
 
+  Stream<DeviceOrientation>? _deviceOrientationStream;
   Stream<Map<Object?, Object?>>? _eventsStream;
 
+  /// Get the event stream of device orientation change events
+  /// that come from the [deviceOrientationEventChannel].
+  Stream<DeviceOrientation> get deviceOrientationChangedStream {
+    _deviceOrientationStream ??= deviceOrientationEventChannel
+        .receiveBroadcastStream()
+        .cast<String>()
+        .map((String orientation) => orientation.parseDeviceOrientation());
+
+    return _deviceOrientationStream!;
+  }
+
+  /// Get the event stream of barcode events that come from the [eventChannel].
   Stream<Map<Object?, Object?>> get eventsStream {
     _eventsStream ??=
         eventChannel.receiveBroadcastStream().cast<Map<Object?, Object?>>();
@@ -45,6 +76,10 @@ class MethodChannelMobileScanner extends MobileScannerPlatform {
     return _eventsStream!;
   }
 
+  /// The delegate that handles texture rotation corrections.
+  SurfaceProducerDelegate? _surfaceProducerDelegate;
+
+  /// The identifier of the current texture.
   int? _textureId;
   bool _pausing = false;
 
@@ -54,24 +89,22 @@ class MethodChannelMobileScanner extends MobileScannerPlatform {
       return null;
     }
 
-    final Object? data = event['data'];
+    final data = event['data'];
 
     if (data == null || data is! List<Object?>) {
       return null;
     }
 
-    final List<Map<Object?, Object?>> barcodes =
-        data.cast<Map<Object?, Object?>>();
+    final barcodes = data.cast<Map<Object?, Object?>>();
 
     if (defaultTargetPlatform == TargetPlatform.android ||
         defaultTargetPlatform == TargetPlatform.iOS ||
         defaultTargetPlatform == TargetPlatform.macOS ||
         defaultTargetPlatform == TargetPlatform.ohos) {
-      final Map<Object?, Object?>? imageData =
-          event['image'] as Map<Object?, Object?>?;
-      final Uint8List? image = imageData?['bytes'] as Uint8List?;
-      final double? width = imageData?['width'] as double?;
-      final double? height = imageData?['height'] as double?;
+      final imageData = event['image'] as Map<Object?, Object?>?;
+      final image = imageData?['bytes'] as Uint8List?;
+      final width = imageData?['width'] as double?;
+      final height = imageData?['height'] as double?;
 
       return BarcodeCapture(
         raw: event,
@@ -89,13 +122,17 @@ class MethodChannelMobileScanner extends MobileScannerPlatform {
     );
   }
 
-  /// Parse a [MobileScannerBarcodeException] from the given [error] and [stackTrace], and throw it.
+  /// Parse a [MobileScannerBarcodeException] from the given [error] and
+  /// [stackTrace], and throw it.
   ///
   /// If the error is not a [PlatformException],
-  /// with [kBarcodeErrorEventName] as [PlatformException.code], the error is rethrown as-is.
+  /// with [kBarcodeErrorEventName] as [PlatformException.code], the error is
+  /// rethrown as-is.
   Never _parseBarcodeError(Object error, StackTrace stackTrace) {
-    if (error case PlatformException(:final String code, :final String? message)
-        when code == kBarcodeErrorEventName) {
+    if (error case PlatformException(
+      :final String code,
+      :final String? message,
+    ) when code == kBarcodeErrorEventName) {
       throw MobileScannerBarcodeException(message);
     }
 
@@ -107,8 +144,7 @@ class MethodChannelMobileScanner extends MobileScannerPlatform {
   /// Throws a [MobileScannerException] if the permission is not granted.
   Future<void> _requestCameraPermission() async {
     try {
-      final MobileScannerAuthorizationState authorizationState =
-          MobileScannerAuthorizationState.fromRawValue(
+      final authorizationState = MobileScannerAuthorizationState.fromRawValue(
         await methodChannel.invokeMethod<int>('state') ?? 0,
       );
 
@@ -120,7 +156,7 @@ class MethodChannelMobileScanner extends MobileScannerPlatform {
         // So if the permission was denied, request it again.
         case MobileScannerAuthorizationState.denied:
         case MobileScannerAuthorizationState.undetermined:
-          final bool permissionGranted =
+          final permissionGranted =
               await methodChannel.invokeMethod<bool>('request') ?? false;
 
           if (!permissionGranted) {
@@ -142,13 +178,14 @@ class MethodChannelMobileScanner extends MobileScannerPlatform {
     }
   }
 
+  /// Handle incoming barcode events.
+  /// The error events are transformed to `MobileScannerBarcodeException` where
+  /// possible.
   @override
   Stream<BarcodeCapture?> get barcodesStream {
-    // Handle incoming barcode events.
-    // The error events are transformed to `MobileScannerBarcodeException` where possible.
     return eventsStream
         .where((e) => e['name'] == kBarcodeEventName)
-        .map((event) => _parseBarcode(event))
+        .map(_parseBarcode)
         .handleError(_parseBarcodeError);
   }
 
@@ -172,17 +209,17 @@ class MethodChannelMobileScanner extends MobileScannerPlatform {
     List<BarcodeFormat> formats = const <BarcodeFormat>[],
   }) async {
     try {
-      final Map<Object?, Object?>? result =
-          await methodChannel.invokeMapMethod<Object?, Object?>(
+      final result = await methodChannel.invokeMapMethod<Object?, Object?>(
         'analyzeImage',
         {
           'filePath': path,
-          'formats': formats.isEmpty
-              ? null
-              : [
-                  for (final BarcodeFormat format in formats)
-                    if (format != BarcodeFormat.unknown) format.rawValue,
-                ],
+          'formats':
+              formats.isEmpty
+                  ? null
+                  : [
+                    for (final BarcodeFormat format in formats)
+                      if (format != BarcodeFormat.unknown) format.rawValue,
+                  ],
         },
       );
 
@@ -191,6 +228,10 @@ class MethodChannelMobileScanner extends MobileScannerPlatform {
       // Handle any errors from analyze image requests.
       if (error.code == kBarcodeErrorEventName) {
         throw MobileScannerBarcodeException(error.message);
+      }
+
+      if (error.code == kUnsupportdOperationErrorEventName) {
+        throw UnsupportedError(error.message ?? 'Unsupported operation.');
       }
 
       return null;
@@ -203,7 +244,24 @@ class MethodChannelMobileScanner extends MobileScannerPlatform {
       return const SizedBox();
     }
 
-    return Texture(textureId: _textureId!);
+    final Widget texture = Texture(textureId: _textureId!);
+
+    // If the preview needs manual orientation corrections,
+    // correct the preview orientation based on the currently reported device
+    // orientation.
+    if (_surfaceProducerDelegate
+        case final SurfaceProducerDelegate delegate
+        when !delegate.handlesCropAndRotation) {
+      return RotatedPreview.fromCameraDirection(
+        delegate.cameraFacingDirection,
+        deviceOrientationStream: deviceOrientationChangedStream,
+        initialDeviceOrientation: delegate.initialDeviceOrientation,
+        sensorOrientationDegrees: delegate.sensorOrientationDegrees,
+        child: texture,
+      );
+    }
+
+    return texture;
   }
 
   @override
@@ -214,6 +272,22 @@ class MethodChannelMobileScanner extends MobileScannerPlatform {
   @override
   Future<void> setZoomScale(double zoomScale) async {
     await methodChannel.invokeMethod<void>('setScale', zoomScale);
+  }
+
+  @override
+  Future<void> setFocusPoint(Offset position) async {
+    if (defaultTargetPlatform != TargetPlatform.iOS &&
+        defaultTargetPlatform != TargetPlatform.android &&
+        defaultTargetPlatform != TargetPlatform.ohos) {
+      throw UnimplementedError('setFocusPoint() has not been implemented.');
+    }
+
+    final params = <String, Object?>{
+      'dx': position.dx,
+      'dy': position.dy,
+    };
+
+    await methodChannel.invokeMethod<void>('setFocus', params);
   }
 
   @override
@@ -256,7 +330,7 @@ class MethodChannelMobileScanner extends MobileScannerPlatform {
       );
     }
 
-    final int? textureId = startResult['textureId'] as int?;
+    final textureId = startResult['textureId'] as int?;
 
     if (textureId == null) {
       throw const MobileScannerException(
@@ -267,17 +341,49 @@ class MethodChannelMobileScanner extends MobileScannerPlatform {
       );
     }
 
+    final cameraDirection = CameraFacing.fromRawValue(
+      startResult['cameraDirection'] as int?,
+    );
+
     _textureId = textureId;
 
-    final int? numberOfCameras = startResult['numberOfCameras'] as int?;
-    final TorchState currentTorchState = TorchState.fromRawValue(
+    DeviceOrientation? initialDeviceOrientation;
+
+    if (defaultTargetPlatform == TargetPlatform.android) {
+      _surfaceProducerDelegate = 
+          AndroidSurfaceProducerDelegate.fromConfiguration(
+            startResult,
+            cameraDirection,
+          );
+      initialDeviceOrientation = 
+          _surfaceProducerDelegate?.initialDeviceOrientation;
+    } else if (defaultTargetPlatform == TargetPlatform.ohos) {
+      // Initialize OHOS surface producer delegate
+      _surfaceProducerDelegate = 
+          OhosSurfaceProducerDelegate.fromConfiguration(
+            startResult,
+            cameraDirection,
+          );
+      initialDeviceOrientation = 
+          _surfaceProducerDelegate?.initialDeviceOrientation;
+    } else if (startResult
+        case {'initialDeviceOrientation': final String orientation}
+        when defaultTargetPlatform == TargetPlatform.iOS ||
+            defaultTargetPlatform == TargetPlatform.macOS) {
+      initialDeviceOrientation = orientation.parseDeviceOrientation();
+    }
+
+    final numberOfCameras = startResult['numberOfCameras'] as int?;
+    final currentTorchState = TorchState.fromRawValue(
       startResult['currentTorchState'] as int? ?? -1,
     );
 
     final Size size;
 
-    if (startResult['size']
-        case {'width': final double width, 'height': final double height}) {
+    if (startResult['size'] case {
+      'width': final double width,
+      'height': final double height,
+    }) {
       size = Size(width, height);
     } else {
       size = Size.zero;
@@ -286,9 +392,11 @@ class MethodChannelMobileScanner extends MobileScannerPlatform {
     _pausing = false;
 
     return MobileScannerViewAttributes(
+      cameraDirection: cameraDirection,
       currentTorchMode: currentTorchState,
       numberOfCameras: numberOfCameras,
       size: size,
+      initialDeviceOrientation: initialDeviceOrientation,
     );
   }
 
@@ -300,6 +408,9 @@ class MethodChannelMobileScanner extends MobileScannerPlatform {
 
     _textureId = null;
     _pausing = false;
+    _surfaceProducerDelegate = null;
+    _eventsStream = null;
+    _deviceOrientationStream = null;
 
     await methodChannel.invokeMethod<void>('stop', {'force': force});
   }
@@ -332,10 +443,9 @@ class MethodChannelMobileScanner extends MobileScannerPlatform {
       points = [window.left, window.top, window.right, window.bottom];
     }
 
-    await methodChannel.invokeMethod<void>(
-      'updateScanWindow',
-      {'rect': points},
-    );
+    await methodChannel.invokeMethod<void>('updateScanWindow', {
+      'rect': points,
+    });
   }
 
   @override

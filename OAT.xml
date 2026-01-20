@@ -118,6 +118,7 @@
                 <filteritem type="filename" name="BuildProfile.ets" desc="ohos自动生成的文件，编译配置"/>
                 <filteritem type="filename" name="GeneratedPluginRegistrant.ets" desc="flutter自动生成的文件"/>
                 <filteritem type="filename" name="hvigor-wrapper.js" desc="hvigor编译程序，不影响兼容性"/>
+                <filteritem type="filename" name="**.xcprivacy|**.storyboard|**.pbxproj|**.entitlements|Podfile|**.h|**.yaml|**.plist|**.xml|**.xcconfig|**.xcsettings|**.xib|**.xcworkspacedata|**.podspec|**.swift|**.kt|**.xcscheme" desc="flutter开源库代码（或原库代码文件），原本就无协议头，不做侵入式修改"/>
 
                 <filteritem type="filepath" name="*/android/*" desc="android文件，不涉及适配"/>
                 <filteritem type="filepath" name="*/ios/*" desc="iOS文件，不涉及适配"/>
@@ -133,6 +134,7 @@
                 <filteritem type="filename" name="BuildProfile.ets" desc="ohos自动生成的文件，编译配置"/>
                 <filteritem type="filename" name="GeneratedPluginRegistrant.ets" desc="flutter自动生成的文件"/>
                 <filteritem type="filename" name="hvigor-wrapper.js" desc="hvigor编译程序，不影响兼容性"/>
+                <filteritem type="filename" name="**.xcprivacy|**.storyboard|**.pbxproj|**.entitlements|Podfile|**.h|**.yaml|**.plist|**.xml|**.xcconfig|**.xcsettings|**.xib|**.xcworkspacedata|**.podspec|**.swift|**.kt|**.xcscheme" desc="flutter开源库代码（或原库代码文件），原本就无版权头，不做侵入式修改"/>
 
                 <filteritem type="filepath" name="*/android/*" desc="android文件，不涉及适配"/>
                 <filteritem type="filepath" name="*/ios/*" desc="iOS文件，不涉及适配"/>

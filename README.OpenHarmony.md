@@ -24,6 +24,7 @@ dependencies:
   fluttertpc_mobile_scanner:
     git: 
       url: https://gitcode.com/openharmony-sig/fluttertpc_mobile_scanner.git
+      ref: br_v7.1.4_ohos
 
 ...
 ```
@@ -47,8 +48,7 @@ For use cases [example](/example/lib/main.dart)
 
 This document is verified based on the following versions:
 
-1. Flutter: 3.7.12-ohos-1.0.6; SDK: 5.0.0(12); IDE: DevEco Studio: 5.0.13.200; ROM: 5.1.0.120 SP3;
-2. Flutter: 3.22.1-ohos-1.0.1; SDK: 5.0.0(12); IDE: DevEco Studio: 5.0.13.200; ROM: 5.1.0.120 SP3;
+1. Flutter: 3.35.7-ohos-0.0.1; SDK: 6.0.1(21); IDE: DevEco Studio: 6.0.1.260; ROM: 6.0.0.120 SP6;
 
 ### 2.2 Permission Requirements
 
@@ -100,9 +100,10 @@ Open  `entry/src/main/resources/base/element/string.json` and add the following 
 | stop               | Stops the camera, but does not dispose this controller                                                       | function | /                                                                    | Future<void>            | yes          |
 | analyzeImage       | Handles a local image file, returns true if a barcode or QR code is found, returns false if nothing is found | function | String path, {List<BarcodeFormat> formats = const <BarcodeFormat>[]} | Future<BarcodeCapture?> | yes          |
 | setZoomScale       | Set the zoomScale of the camera                                                                              | function | double zoomScale                                                     | Future<void>            | yes          |
-| resetZoomScale     | Reset the zoomScale of the camera to use standard scale 1x                                                   | function | /                                                                    | Future<void>            | yes          |
+| resetZoomScale     | Reset the zoomScale of the camera to use standard scale initialZoom                                                   | function | /                                                                    | Future<void>            | yes          |
 | updateScanWindow   | updates the native ScanWindow                                                                                | function | Rect? window                                                         | Future<void>            | yes          |
 | switchCamera       | Changes the state of the camera (front or back)                                                              | function | /                                                                    | Future<void>            | yes          |
+| setFocusPoint       | Set the focus point of the camera                                                                          | function | Offset position                                                    | Future<void>            | yes          |
 
 
 ## 4. Properties
@@ -119,9 +120,12 @@ Open  `entry/src/main/resources/base/element/string.json` and add the following 
 | formats              | If provided, the scanner will only detect those specific formats          | List<BarcodeFormat>? |  yes          |
 | detectionTimeoutMs   | Sets the timeout, in milliseconds, of the scanner                         | int                  |  no           |
 | autoStart            | Automatically start the mobileScanner on initialization                   | bool                 |  yes          |
-| cameraResolution     | The desired resolution for the camera                                     | Size                 |  no           |
+| cameraResolution     | The desired resolution for the camera                                     | Size                 |  yes           |
 | useNewCameraSelector | Use the new resolution selector                                           | bool                 |  no           |
 | detectionSpeed       | Sets the speed of detections                                              | DetectionSpeed       |  no           |
+| invertImage          | Whether to invert the image horizontally                                | bool                 |  yes           |
+| autoZoom             | Whether to enable auto zoom when a barcode is detected                  | bool                 |  yes           |
+| initialZoom          | The initial zoom scale of the camera, must be within 0.0 and 1.0, where 1.0 is the max zoom, and 0.0 is zoomed out | double?                 | yes           |
 
 ### Parameters
 
