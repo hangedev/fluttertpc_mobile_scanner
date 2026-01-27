@@ -292,6 +292,7 @@ export class MobileScannerPlugin implements FlutterPlugin, MethodCallHandler, Ab
     this.scanWindow = null;
     this.retryScanTimes = 0;
     this.isStart = true;
+    this.isPaused = false;
     let scanTypes = [scanCore.ScanType.ALL]
     if (this.formats) {
       scanTypes = []
