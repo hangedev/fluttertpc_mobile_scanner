@@ -91,6 +91,7 @@
                 <filteritem type="filename" name="icudtl.dat" desc="ohos字体库文件，不影响兼容性"/>
                 <filteritem type="filename" name="*.tgz" desc="hvigor本地插件,不影响兼容性"/>
                 <filteritem type="filename" name="**.json5" desc="配置文件，flutter插件项目编译时会重写覆盖"/>
+                <filteritem type="filepath" name="projectroot/buildEnv.sh" desc="CI build config file"/>
                 <filteritem type="filename" name="**.dart" desc="dart原始代码"/>
                 <filteritem type="filename" name="**.md" desc="markdown说明文件"/>
                 <filteritem type="filename" name="hvigorw.bat" desc="hvigorw编译程序，不影响兼容性"/>
@@ -110,6 +111,7 @@
             </filefilter>
             <filefilter name="defaultPolicyFilter" desc="Filters for compatibility，license header policies">
                 <filteritem type="filename" name="**.json5" desc="配置文件，flutter插件项目编译时会重写覆盖"/>
+                <filteritem type="filepath" name="projectroot/buildEnv.sh" desc="CI build config file"/>
                 <filteritem type="filename" name="**.dart" desc="dart原始代码"/>
                 <filteritem type="filename" name="**.md" desc="markdown说明文件"/>
                 <filteritem type="filename" name="hvigorw.bat" desc="hvigorw编译程序，不影响兼容性"/>
@@ -125,6 +127,7 @@
                 <filteritem type="filepath" name="*/windows/*" desc="windows文件，不涉及适配"/>
             </filefilter>
             <filefilter name="copyrightPolicyFilter" desc="Filters for copyright header policies">
+                <filteritem type="filepath" name="projectroot/buildEnv.sh" desc="CI build config file"/>
                 <filteritem type="filename" name="**.dart" desc="dart原始代码"/>
                 <filteritem type="filename" name="**.md" desc="markdown说明文件"/>
                 <filteritem type="filename" name="hvigorw.bat" desc="hvigorw编译程序，不影响兼容性"/>
