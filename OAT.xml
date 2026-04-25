@@ -85,7 +85,7 @@
 
         <filefilterlist>
             <filefilter name="defaultFilter" desc="Files not to check">
-                <filteritem type="filename" name="*.iml|*.json|*.txt" desc="desc files"/>
+                <filteritem type="filename" name="*.iml|*.json|*.txt |*.yaml" desc="desc files"/>
                 <filteritem type="filename" name="*.png|*.ico|*.jpg|*.webp|*.ttf|*.enc|*.mp3" desc="app resource files"/>
                 <filteritem type="filename" name="*.so|*.har" desc="engine二进制文件,不影响兼容性"/>
                 <filteritem type="filename" name="icudtl.dat" desc="ohos字体库文件，不影响兼容性"/>
