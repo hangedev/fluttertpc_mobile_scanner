@@ -23,7 +23,7 @@ Go to the project directory and add the following dependencies in pubspec.yaml
 dependencies:
   fluttertpc_mobile_scanner:
     git: 
-      url: https://gitcode.com/openharmony-sig/fluttertpc_mobile_scanner.git
+      url: https://gitcode.com/CPF-Flutter/fluttertpc_mobile_scanner.git
 
 ...
 ```
@@ -134,7 +134,7 @@ Open  `entry/src/main/resources/base/element/string.json` and add the following 
 
 ## 5. Known Issues
 
-- [ ] Custom QR code scanning cannot switch to the front camera: [issue#57](https://gitcode.com/openharmony-sig/fluttertpc_mobile_scanner/issues/57)
+- [ ] Custom QR code scanning cannot switch to the front camera: [issue#57](https://gitcode.com/CPF-Flutter/fluttertpc_mobile_scanner/issues/57)
 
 ## 6. Others
 
