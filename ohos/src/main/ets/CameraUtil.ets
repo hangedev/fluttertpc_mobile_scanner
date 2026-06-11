@@ -18,49 +18,74 @@ import common from '@ohos.app.ability.common';
 import { camera } from '@kit.CameraKit';
 import Log from '@ohos/flutter_ohos/src/main/ets/util/Log';
 
-const TAG: string = "CameraUtil";
+const TAG: string = 'CameraUtil';
 
 /**
- * 如果获取对象失败，说明相机可能被占用或无法使用。如果被占用，须等到相机被释放后才能重新获取。
- * @param context
- * @returns
+ * Gets the camera manager instance.
+ * If the camera is occupied or unavailable, returns undefined.
+ * @param context - The application context.
+ * @returns The camera manager instance, or undefined on failure.
  */
 export function getCameraManager(context: common.BaseContext): camera.CameraManager | undefined {
   let cameraManager: camera.CameraManager | undefined = undefined;
   try {
     cameraManager = camera.getCameraManager(context);
   } catch (error) {
-    let err = error as BusinessError;
+    const err: BusinessError = error as BusinessError;
     Log.e(TAG, `The getCameraManager call failed. error code: ${err.code}`);
   }
   return cameraManager;
 }
 
-export function createSession(cameraManager: camera.CameraManager, mode: camera.SceneMode): camera.PhotoSession | undefined {
+/**
+ * Creates a photo session with the given camera manager and scene mode.
+ * @param cameraManager - The camera manager instance.
+ * @param mode - The scene mode for the session.
+ * @returns The photo session, or undefined on failure.
+ */
+export function createSession(
+  cameraManager: camera.CameraManager,
+  mode: camera.SceneMode
+): camera.PhotoSession | undefined {
   let photoSession: camera.PhotoSession | undefined = undefined;
   try {
     photoSession = cameraManager.createSession(mode) as camera.PhotoSession;
   } catch (error) {
-    // 失败返回错误码error.code并处理
-    let err = error as BusinessError;
+    const err: BusinessError = error as BusinessError;
     Log.e(TAG, `createCaptureSession error. error code: ${err.code}`);
   }
   return photoSession;
 }
 
-export function hasFlashUnit(context: common.BaseContext):boolean {
-  let status: boolean = true;
-  /*
+/**
+ * Checks if the device has a flash unit.
+ * @param context - The application context.
+ * @returns true if the device has a flash unit, false otherwise.
+ */
+export function hasFlashUnit(context: common.BaseContext): boolean {
+  let status: boolean = false;
+  let photoSession: camera.PhotoSession | undefined = undefined;
   try {
-    let cameraManager = getCameraManager(context)!;
-    let photoSession = createSession(cameraManager, camera.SceneMode.NORMAL_PHOTO)!;
-    photoSession.beginConfig();
-    status = photoSession.hasFlash();
+    const cameraManager: camera.CameraManager | undefined = getCameraManager(context);
+    if (cameraManager) {
+      photoSession = createSession(cameraManager, camera.SceneMode.NORMAL_PHOTO);
+      if (photoSession) {
+        photoSession.beginConfig();
+        status = photoSession.hasFlash();
+        photoSession.commitConfig();
+      }
+    }
   } catch (error) {
-    // 失败返回错误码error.code并处理
-    let err = error as BusinessError;
+    const err: BusinessError = error as BusinessError;
     Log.e(TAG, `The hasFlash call failed. error code: ${err.code}`);
+  } finally {
+    if (photoSession) {
+      try {
+        photoSession.release();
+      } catch (e) {
+        Log.e(TAG, `Session release failed: ${e}`);
+      }
+    }
   }
-  */
   return status;
 }

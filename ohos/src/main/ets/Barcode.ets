@@ -104,6 +104,11 @@ export enum BarcodeType {
   driverLicense = 12
 }
 
+export interface SizeResult {
+  width: number;
+  height: number;
+}
+
 export class Barcode {
   displayValue: string = '';
   rawValue: string = '';
@@ -112,102 +117,112 @@ export class Barcode {
   corners: Array<Point> = [];
   size: SizeResult = {width: 0, height: 0};
 
-  static convertScanType(value:scanCore.ScanType):BarcodeFormat {
-    let format = BarcodeFormat.unknown
+  /**
+   * Converts a ScanKit ScanType to the plugin's internal BarcodeFormat.
+   * @param value - The ScanKit ScanType value to convert.
+   * @returns The corresponding BarcodeFormat, or BarcodeFormat.unknown for unrecognized types.
+   */
+  static convertScanType(value: scanCore.ScanType): BarcodeFormat {
+    let format: BarcodeFormat = BarcodeFormat.unknown;
 
-    switch(value) {
+    switch (value) {
       case scanCore.ScanType.AZTEC_CODE:
-        format = BarcodeFormat.aztec
-        break
+        format = BarcodeFormat.aztec;
+        break;
       case scanCore.ScanType.CODABAR_CODE:
-        format = BarcodeFormat.codabar
-        break
+        format = BarcodeFormat.codabar;
+        break;
       case scanCore.ScanType.CODE39_CODE:
-        format = BarcodeFormat.code39
-        break
+        format = BarcodeFormat.code39;
+        break;
       case scanCore.ScanType.CODE93_CODE:
-        format = BarcodeFormat.code93
-        break
+        format = BarcodeFormat.code93;
+        break;
       case scanCore.ScanType.CODE128_CODE:
-        format = BarcodeFormat.code128
-        break
+        format = BarcodeFormat.code128;
+        break;
       case scanCore.ScanType.DATAMATRIX_CODE:
-        format = BarcodeFormat.dataMatrix
-        break
+        format = BarcodeFormat.dataMatrix;
+        break;
       case scanCore.ScanType.EAN8_CODE:
-        format = BarcodeFormat.ean8
-        break
+        format = BarcodeFormat.ean8;
+        break;
       case scanCore.ScanType.EAN13_CODE:
-        format = BarcodeFormat.ean13
-        break
+        format = BarcodeFormat.ean13;
+        break;
       case scanCore.ScanType.ITF14_CODE:
-        format = BarcodeFormat.itf
-        break
+        format = BarcodeFormat.itf;
+        break;
       case scanCore.ScanType.PDF417_CODE:
-        format = BarcodeFormat.pdf417
-        break
+        format = BarcodeFormat.pdf417;
+        break;
       case scanCore.ScanType.QR_CODE:
-        format = BarcodeFormat.qrCode
-        break
+        format = BarcodeFormat.qrCode;
+        break;
       case scanCore.ScanType.UPC_A_CODE:
-        format = BarcodeFormat.upcA
-        break
+        format = BarcodeFormat.upcA;
+        break;
       case scanCore.ScanType.UPC_E_CODE:
-        format = BarcodeFormat.upcE
-        break
+        format = BarcodeFormat.upcE;
+        break;
     }
 
-    return format
+    return format;
   }
 
-  static convertToScanType(value:BarcodeFormat): scanCore.ScanType{
-    let type = scanCore.ScanType.FORMAT_UNKNOWN
+  /**
+   * Converts a plugin BarcodeFormat to a ScanKit ScanType.
+   * @param value - The plugin BarcodeFormat value to convert.
+   * @returns The corresponding ScanKit ScanType, or FORMAT_UNKNOWN for unrecognized formats.
+   */
+  static convertToScanType(value: BarcodeFormat): scanCore.ScanType {
+    let type: scanCore.ScanType = scanCore.ScanType.FORMAT_UNKNOWN;
 
-    switch(value) {
+    switch (value) {
       case BarcodeFormat.aztec:
-        type = scanCore.ScanType.AZTEC_CODE
-        break
+        type = scanCore.ScanType.AZTEC_CODE;
+        break;
       case BarcodeFormat.codabar:
-        type = scanCore.ScanType.CODABAR_CODE
-        break
+        type = scanCore.ScanType.CODABAR_CODE;
+        break;
       case BarcodeFormat.code39:
-        type = scanCore.ScanType.CODE39_CODE
-        break
+        type = scanCore.ScanType.CODE39_CODE;
+        break;
       case BarcodeFormat.code93:
-        type = scanCore.ScanType.CODE93_CODE
-        break
+        type = scanCore.ScanType.CODE93_CODE;
+        break;
       case BarcodeFormat.code128:
-        type = scanCore.ScanType.CODE128_CODE
-        break
+        type = scanCore.ScanType.CODE128_CODE;
+        break;
       case BarcodeFormat.dataMatrix:
-        type = scanCore.ScanType.DATAMATRIX_CODE
-        break
+        type = scanCore.ScanType.DATAMATRIX_CODE;
+        break;
       case BarcodeFormat.ean8:
-        type = scanCore.ScanType.EAN8_CODE
-        break
+        type = scanCore.ScanType.EAN8_CODE;
+        break;
       case BarcodeFormat.ean13:
-        type = scanCore.ScanType.EAN13_CODE
-        break
+        type = scanCore.ScanType.EAN13_CODE;
+        break;
       case BarcodeFormat.itf:
-        type = scanCore.ScanType.ITF14_CODE
-        break
+        type = scanCore.ScanType.ITF14_CODE;
+        break;
       case BarcodeFormat.pdf417:
-        type = scanCore.ScanType.PDF417_CODE
-        break
-      case  BarcodeFormat.qrCode:
-        type = scanCore.ScanType.QR_CODE
-        break
+        type = scanCore.ScanType.PDF417_CODE;
+        break;
+      case BarcodeFormat.qrCode:
+        type = scanCore.ScanType.QR_CODE;
+        break;
       case BarcodeFormat.upcA:
-        type = scanCore.ScanType.UPC_A_CODE
-        break
+        type = scanCore.ScanType.UPC_A_CODE;
+        break;
       case BarcodeFormat.upcE:
-        type = scanCore.ScanType.UPC_E_CODE
-        break
+        type = scanCore.ScanType.UPC_E_CODE;
+        break;
       case BarcodeFormat.all:
-        type = scanCore.ScanType.ALL
-        break
+        type = scanCore.ScanType.ALL;
+        break;
     }
 
-    return type
+    return type;
   }
 }
