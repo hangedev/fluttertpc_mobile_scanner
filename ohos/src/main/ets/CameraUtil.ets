@@ -13,54 +13,127 @@
 * limitations under the License.
 */
 
-import { BusinessError } from '@ohos.base';
 import common from '@ohos.app.ability.common';
 import { camera } from '@kit.CameraKit';
-import Log from '@ohos/flutter_ohos/src/main/ets/util/Log';
 
-const TAG: string = "CameraUtil";
+const TAG: string = 'CameraUtil';
+
+function logError(msg: string): void {
+  console.error(TAG + ': ' + msg);
+}
 
 /**
- * 如果获取对象失败，说明相机可能被占用或无法使用。如果被占用，须等到相机被释放后才能重新获取。
- * @param context
- * @returns
+ * Extract a human-readable error message from an error object.
+ * Uses Object.keys()/Object.values() runtime property extraction to safely
+ * access the 'message' property across different SDK error types.
+ * @param err - The error object to extract message from
+ * @returns A human-readable error message string
+ */
+function getErrMsg(err: Object | null | undefined): string {
+  if (err === null || err === undefined) {
+    return 'Unknown error';
+  }
+  const keys: string[] = Object.keys(err);
+  const values: Object[] = Object.values(err);
+  for (let i: number = 0; i < keys.length; i++) {
+    if (keys[i] === 'message') {
+      const msg: Object = values[i];
+      if (typeof msg === 'string') {
+        return msg;
+      }
+    }
+  }
+  return String(err);
+}
+
+/**
+ * Get the camera manager for the given context.
+ * @param context - The application context
+ * @returns The CameraManager instance, or undefined if unavailable
  */
 export function getCameraManager(context: common.BaseContext): camera.CameraManager | undefined {
-  let cameraManager: camera.CameraManager | undefined = undefined;
-  try {
-    cameraManager = camera.getCameraManager(context);
-  } catch (error) {
-    let err = error as BusinessError;
-    Log.e(TAG, `The getCameraManager call failed. error code: ${err.code}`);
+  if (context === null || context === undefined) {
+    return undefined;
   }
-  return cameraManager;
+  try {
+    const mgr: camera.CameraManager = camera.getCameraManager(context);
+    if (mgr !== null && mgr !== undefined) {
+      return mgr;
+    }
+    return undefined;
+  } catch (error) {
+    logError('getCameraManager failed: ' + getErrMsg(error));
+    return undefined;
+  }
 }
 
-export function createSession(cameraManager: camera.CameraManager, mode: camera.SceneMode): camera.PhotoSession | undefined {
-  let photoSession: camera.PhotoSession | undefined = undefined;
+/**
+ * Get the list of supported camera devices.
+ * @param context - The application context
+ * @returns Array of CameraDevice, or empty array if unavailable
+ */
+export function getSupportedCameras(context: common.BaseContext): Array<camera.CameraDevice> {
   try {
-    photoSession = cameraManager.createSession(mode) as camera.PhotoSession;
+    const mgr: camera.CameraManager | undefined = getCameraManager(context);
+    if (mgr === undefined) {
+      return [];
+    }
+    return mgr.getSupportedCameras();
   } catch (error) {
-    // 失败返回错误码error.code并处理
-    let err = error as BusinessError;
-    Log.e(TAG, `createCaptureSession error. error code: ${err.code}`);
+    logError('getSupportedCameras failed: ' + getErrMsg(error));
+    return [];
   }
-  return photoSession;
 }
 
-export function hasFlashUnit(context: common.BaseContext):boolean {
-  let status: boolean = true;
-  /*
-  try {
-    let cameraManager = getCameraManager(context)!;
-    let photoSession = createSession(cameraManager, camera.SceneMode.NORMAL_PHOTO)!;
-    photoSession.beginConfig();
-    status = photoSession.hasFlash();
-  } catch (error) {
-    // 失败返回错误码error.code并处理
-    let err = error as BusinessError;
-    Log.e(TAG, `The hasFlash call failed. error code: ${err.code}`);
+/**
+ * Check if the device has a flash unit (torch) available.
+ * First checks if CameraDevice.hasFlash property is exposed,
+ * then falls back to checking for a back camera (which typically has flash).
+ * @param context - The application context
+ * @returns true if a flash unit is available
+ */
+export function hasFlashUnit(context: common.BaseContext): boolean {
+  if (context === null || context === undefined) {
+    return false;
   }
-  */
-  return status;
+  try {
+    const cameras: camera.CameraDevice[] = getSupportedCameras(context);
+    if (cameras === null || cameras === undefined || cameras.length === 0) {
+      return false;
+    }
+    // 检查第一个后置摄像头是否有闪光灯能力
+    // 优先检查后置摄像头（通常后置摄像头才有闪光灯）
+    for (let i: number = 0; i < cameras.length; i++) {
+      const dev: camera.CameraDevice = cameras[i];
+      // 检查 CameraDevice 是否有 hasFlash 属性
+      const keys: string[] = Object.keys(dev);
+      for (let j: number = 0; j < keys.length; j++) {
+        if (keys[j] === 'hasFlash') {
+          const values: Object[] = Object.values(dev);
+          if (typeof values[j] === 'boolean') {
+            return values[j] as boolean;
+          }
+        }
+      }
+    }
+    // 当 CameraDevice 不暴露 hasFlash 属性时，回退到启发式判断：
+    // 检查是否有后置摄像头（通常后置摄像头有闪光灯）
+    for (let i: number = 0; i < cameras.length; i++) {
+      const dev: camera.CameraDevice = cameras[i];
+      const cameraKeys: string[] = Object.keys(dev);
+      const cameraValues: Object[] = Object.values(dev);
+      for (let j: number = 0; j < cameraKeys.length; j++) {
+        if (cameraKeys[j] === 'cameraType') {
+          const ct: Object = cameraValues[j];
+          if (typeof ct === 'number' && ct === 0) {
+            return true;
+          }
+        }
+      }
+    }
+    return false;
+  } catch (error) {
+    logError('hasFlashUnit failed: ' + getErrMsg(error));
+    return false;
+  }
 }
