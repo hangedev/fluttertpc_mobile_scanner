@@ -23,7 +23,9 @@ Go to the project directory and add the following dependencies in pubspec.yaml
 dependencies:
   fluttertpc_mobile_scanner:
     git: 
-      url: https://gitcode.com/openharmony-sig/fluttertpc_mobile_scanner.git
+      url: https://gitcode.com/CPF-Flutter/fluttertpc_mobile_scanner.git
+      # ref: Select the TAG version that matches your Flutter framework version from the table below
+      ref: TAG  # Select a TAG from the TAG version mapping table below
 
 ...
 ```
@@ -33,6 +35,17 @@ Execute Command
 ```bash
 flutter pub get
 ```
+
+> TAG naming rule: `original-version-ohos-version-betax`. See CHANGELOG.OpenHarmony.md for changes between TAG versions. Replace `TAG` in the dependency example with the TAG selected from the table.
+
+| Flutter framework version | TAG name | Branch |
+|---|---|---|
+| 3.7 | 3.5.6-ohos-1.0.0-beta.1 | master |
+| 3.22 | 3.5.6-ohos-1.0.0-beta.1 | master |
+| 3.27 | 6.0.2-ohos-1.0.0-beta.1 | br_v6.0.2_ohos |
+| 3.27 | 6.0.10-ohos-1.0.0-beta.1 | br_v6.0.10_ohos |
+| 3.27 | 7.1.4-ohos-1.0.0-beta.1 | br_v7.1.4_ohos |
+
 
 <!-- tabs:end -->
 
@@ -134,7 +147,7 @@ Open  `entry/src/main/resources/base/element/string.json` and add the following 
 
 ## 5. Known Issues
 
-- [ ] Custom QR code scanning cannot switch to the front camera: [issue#57](https://gitcode.com/openharmony-sig/fluttertpc_mobile_scanner/issues/57)
+- [ ] Custom QR code scanning cannot switch to the front camera: [issue#57](https://gitcode.com/CPF-Flutter/fluttertpc_mobile_scanner/issues/57)
 
 ## 6. Others
 
