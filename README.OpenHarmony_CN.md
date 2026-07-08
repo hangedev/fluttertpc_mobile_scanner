@@ -18,16 +18,23 @@
 #### pubspec.yaml
 
 ```yaml
-...
 
 dependencies:
   fluttertpc_mobile_scanner:
     git:
       url: https://gitcode.com/CPF-Flutter/fluttertpc_mobile_scanner.git
-      ref: br_v7.1.4_ohos
-
-...
+      ref: TAG #根据框架版本进行选择
+      #path: ohos 如果是 3.7 的框架版本，需要注意添加path
 ```
+
+> TAG 命名规则：`原库版本-ohos-版本号-betax`，不同 TAG 之间的变更详见 CHANGELOG.OpenHarmony.md。实际使用时请将依赖示例中的 `TAG` 替换为下表选择的 TAG。
+
+| Flutter 框架版本 | TAG 名称 | 分支名 |
+|---|---|---|
+| 3.7 | 3.5.6-ohos-1.0.0-beta.1 | master |
+| 3.22 | 6.0.2-ohos-1.0.0-beta.1 | br_v6.0.2_ohos |
+| 3.27 | 6.0.10-ohos-1.0.0-beta.1 | br_v6.0.10_ohos |
+| 3.35 | 7.1.4-ohos-1.0.0-beta.1 | br_v7.1.4_ohos |
 
 执行命令
 
