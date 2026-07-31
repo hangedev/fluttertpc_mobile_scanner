@@ -14,7 +14,9 @@
 */
 
 import abilityTest from './Ability.test'
+import mobileScannerTest from './MobileScanner.test'
 
 export default function testsuite() {
   abilityTest()
+  mobileScannerTest()
 }

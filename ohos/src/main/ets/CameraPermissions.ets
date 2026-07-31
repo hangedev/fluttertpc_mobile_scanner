@@ -19,71 +19,134 @@ import { BusinessError } from '@ohos.base';
 
 type ResultCallback = (errCode: string | null, errDesc: string | null) => void;
 
-export const cameraPermission: Array<Permissions> = ['ohos.permission.CAMERA'];
+export const CAMERA_PERMISSION: Array<Permissions> = ['ohos.permission.CAMERA'];
+
+/**
+ * Extract the error code number from a BusinessError object.
+ * Uses Object.keys()/Object.values() runtime property extraction to safely
+ * access the 'code' property across different SDK error types.
+ * @param err - The error object to extract code from
+ * @returns The error code number, or -1 if not found
+ */
+function getErrorCode(err: Object | null | undefined): number {
+  if (err === null || err === undefined) {
+    return -1;
+  }
+  if (typeof err !== 'object') {
+    return -1;
+  }
+  const keys: string[] = Object.keys(err);
+  const values: Object[] = Object.values(err);
+  for (let i: number = 0; i < keys.length; i++) {
+    if (keys[i] === 'code') {
+      if (typeof values[i] === 'number') {
+        return values[i] as number;
+      }
+    }
+  }
+  return -1;
+}
+
+/**
+ * Extract a human-readable error message from a BusinessError object.
+ * Uses Object.keys()/Object.values() runtime property extraction to safely
+ * access the 'message' property across different SDK error types.
+ * @param err - The error object to extract message from
+ * @returns A human-readable error message string
+ */
+function getErrorMessage(err: Object | null | undefined): string {
+  if (err === null || err === undefined) {
+    return 'Unknown error';
+  }
+  if (typeof err !== 'object') {
+    return String(err);
+  }
+  const keys: string[] = Object.keys(err);
+  const values: Object[] = Object.values(err);
+  for (let i: number = 0; i < keys.length; i++) {
+    if (keys[i] === 'message') {
+      if (typeof values[i] === 'string') {
+        return values[i] as string;
+      }
+    }
+  }
+  return String(err);
+}
 
 async function checkAccessToken(permission: Permissions): Promise<abilityAccessCtrl.GrantStatus> {
-  let atManager: abilityAccessCtrl.AtManager = abilityAccessCtrl.createAtManager();
-  let grantStatus: abilityAccessCtrl.GrantStatus = abilityAccessCtrl.GrantStatus.PERMISSION_DENIED;
-
-  // 获取应用程序的accessTokenID
+  const atManager: abilityAccessCtrl.AtManager = abilityAccessCtrl.createAtManager();
   let tokenId: number = 0;
+
   try {
-    let bundleInfo: bundleManager.BundleInfo = await bundleManager.getBundleInfoForSelf(bundleManager.BundleFlag.GET_BUNDLE_INFO_WITH_APPLICATION);
-    let appInfo: bundleManager.ApplicationInfo = bundleInfo.appInfo;
-    tokenId = appInfo.accessTokenId;
+    const bundleInfo: bundleManager.BundleInfo = await bundleManager.getBundleInfoForSelf(
+      bundleManager.BundleFlag.GET_BUNDLE_INFO_WITH_APPLICATION,
+    );
+    tokenId = bundleInfo.appInfo.accessTokenId;
   } catch (error) {
-    let err: BusinessError = error as BusinessError;
-    console.error(`Failed to get bundle info for self. Code is ${err.code}, message is ${err.message}`);
+    console.error('Failed to get bundle info: ' + getErrorMessage(error));
+    return abilityAccessCtrl.GrantStatus.PERMISSION_DENIED;
   }
 
-  // 校验应用是否被授予权限
   try {
-    grantStatus = await atManager.checkAccessToken(tokenId, permission);
+    return await atManager.checkAccessToken(tokenId, permission);
   } catch (error) {
-    let err: BusinessError = error as BusinessError;
-    console.error(`Failed to check access token. Code is ${err.code}, message is ${err.message}`);
+    console.error('Failed to check token: ' + getErrorMessage(error));
+    return abilityAccessCtrl.GrantStatus.PERMISSION_DENIED;
   }
-
-  return grantStatus;
 }
 
+/**
+ * Check if the given permissions have been granted.
+ * @param permissions - Array of permissions to check
+ * @returns true if all permissions are granted
+ */
 export async function checkPermissions(permissions: Array<Permissions>): Promise<boolean> {
-  let grantStatus: abilityAccessCtrl.GrantStatus = await checkAccessToken(permissions[0]);
-  return grantStatus === abilityAccessCtrl.GrantStatus.PERMISSION_GRANTED;
+  if (permissions === null || permissions === undefined || permissions.length === 0) {
+    return false;
+  }
+  const status: abilityAccessCtrl.GrantStatus = await checkAccessToken(permissions[0]);
+  return status === abilityAccessCtrl.GrantStatus.PERMISSION_GRANTED;
 }
 
+/**
+ * Request camera permissions from the user.
+ * @param context - The application context
+ * @param callback - Callback with error code and message (null, null on success)
+ */
 export async function requestPermissions(
   context: Context,
-  callback: ResultCallback
-) {
-  const hasCameraPermission: boolean = await checkPermissions(cameraPermission);
+  callback: ResultCallback,
+): Promise<void> {
+  if (context === null || context === undefined) {
+    callback('ERR_NULL_CONTEXT', 'Context is null');
+    return;
+  }
 
-  if (!hasCameraPermission) {
-    let atManager: abilityAccessCtrl.AtManager = abilityAccessCtrl.createAtManager();
-
-    // requestPermissionsFromUser会判断权限的授权状态来决定是否唤起弹窗
-    atManager.requestPermissionsFromUser(context, cameraPermission)
-      .then((data: PermissionRequestResult) => {
-        let grantStatus: Array<number> = data.authResults;
-        let length: number = grantStatus.length;
-        for (let i = 0; i < length; i++) {
-          if (grantStatus[i] !== 0) {
-            // 用户拒绝授权，提示用户必须授权才能访问当前页面的功能，并引导用户到系统设置中打开相应的权限
-            callback('errCode', '未授权相机权限');
-            return;
-          }
-        }
-        // 用户授权，可以继续访问目标操作
-        callback(null, null);
-      }).catch((err: BusinessError) => {
-      console.error(`Failed to request permissions from user. Code is ${err.code}, message is ${err.message}`);
-      callback(String(err.code), err.message);
-    })
-  } else {
-    // Permissions already exist. Call the callback with success.
+  const hasCamera: boolean = await checkPermissions(CAMERA_PERMISSION);
+  if (hasCamera) {
     callback(null, null);
+    return;
+  }
+
+  const atManager: abilityAccessCtrl.AtManager = abilityAccessCtrl.createAtManager();
+  try {
+    const data: PermissionRequestResult = await atManager.requestPermissionsFromUser(context, CAMERA_PERMISSION);
+    const results: Array<number> = data.authResults;
+    if (results === null || results === undefined) {
+      callback('ERR_NO_RESULT', 'No permission result');
+      return;
+    }
+    for (let i: number = 0; i < results.length; i++) {
+      if (results[i] !== 0) {
+        callback('ERR_PERMISSION_DENIED', 'Camera permission denied');
+        return;
+      }
+    }
+    callback(null, null);
+  } catch (err) {
+    const code: string = String(getErrorCode(err));
+    const msg: string = getErrorMessage(err);
+    console.error('Failed to request permissions. code: ' + code + ', msg: ' + msg);
+    callback(code, msg);
   }
 }
-
-
-
