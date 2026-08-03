@@ -6,18 +6,6 @@
 
 本项目基于 [mobile_scanner](https://pub.dev/packages/mobile_scanner) 开发。
 
-## 目录
-
-- [1. 安装与使用](#1-安装与使用)
-- [2. 约束与限制](#2-约束与限制)
-- [3. API](#3-api)
-- [4. 属性](#4-属性)
-- [5. 类型与状态](#5-类型与状态)
-- [6. 异常处理](#6-异常处理)
-- [7. 代码示例](#7-代码示例)
-- [8. 遗留问题](#8-遗留问题)
-- [9. 开源协议](#9-开源协议)
-
 ## 1. 安装与使用
 
 ### 1.1 安装方式
@@ -29,7 +17,8 @@ dependencies:
   fluttertpc_mobile_scanner:
     git:
       url: https://gitcode.com/CPF-Flutter/fluttertpc_mobile_scanner.git
-      ref: 6.0.2-ohos-1.0.0-beta.2
+      # ref: 根据下方表格选择不同框架适配的TAG版本
+      ref: TAG  # Select a TAG from the TAG version mapping table below
 ```
 
 执行命令：
@@ -40,13 +29,13 @@ flutter pub get
 
 ### 1.2 TAG 版本对应表
 
-| 三方库版本 | TAG |
-|-----------|-----|
-| 6.0.2 | 6.0.2-ohos-1.0.0-beta.2 |
-| 7.1.4 | 7.1.4-ohos-1.0.0-beta.1 |
-| 6.0.10 | 6.0.10-ohos-1.0.0-beta.1 |
-| 3.5.6 | 3.5.6-ohos-1.0.0-beta.1 |
-
+| Flutter 框架版本 | TAG 名称 | 分支名 |
+|---|---|---|
+| 3.7 | 3.5.6-ohos-1.0.0-beta.1 | master |
+| 3.22 | 6.0.2-ohos-1.0.0-beta.2 | br_v6.0.2_ohos |
+| 3.27 | 6.0.10-ohos-1.0.0-beta.1 | br_v6.0.10_ohos |
+| 3.35 | 7.1.4-ohos-1.0.0-beta.1 | br_v7.1.4_ohos |
+		
 ### 1.3 完整调用流程
 
 在 Dart 代码中导入并使用：

@@ -6,18 +6,6 @@
 
 This project is based on [mobile_scanner](https://pub.dev/packages/mobile_scanner).
 
-## Table of Contents
-
-- [1. Installation and Usage](#1-installation-and-usage)
-- [2. Constraints](#2-constraints)
-- [3. API](#3-api)
-- [4. Properties](#4-properties)
-- [5. Types and State](#5-types-and-state)
-- [6. Exception Handling](#6-exception-handling)
-- [7. Code Examples](#7-code-examples)
-- [8. Known Issues](#8-known-issues)
-- [9. License](#9-license)
-
 ## 1. Installation and Usage
 
 ### 1.1 Installation
@@ -29,7 +17,8 @@ dependencies:
   fluttertpc_mobile_scanner:
     git:
       url: https://gitcode.com/CPF-Flutter/fluttertpc_mobile_scanner.git
-      ref: 6.0.2-ohos-1.0.0-beta.2
+      # ref: Select the TAG version that matches your Flutter framework version from the table below
+      ref: TAG  # Select a TAG from the TAG version mapping table below
 ```
 
 Run:
@@ -40,12 +29,12 @@ flutter pub get
 
 ### 1.2 TAG Version Mapping
 
-| Library Version | TAG |
-|-----------------|-----|
-| 6.0.2 | 6.0.2-ohos-1.0.0-beta.2 |
-| 7.1.4 | 7.1.4-ohos-1.0.0-beta.1 |
-| 6.0.10 | 6.0.10-ohos-1.0.0-beta.1 |
-| 3.5.6 | 3.5.6-ohos-1.0.0-beta.1 |
+| Flutter framework version | TAG name | Branch |
+|---|---|---|
+| 3.7 | 3.5.6-ohos-1.0.0-beta.1 | master |
+| 3.22 | 6.0.2-ohos-1.0.0-beta.2 | br_v6.0.2_ohos |
+| 3.27 | 6.0.10-ohos-1.0.0-beta.1 | br_v6.0.10_ohos |
+| 3.35 | 7.1.4-ohos-1.0.0-beta.1 | br_v7.1.4_ohos |
 
 Tested on the following versions:
 
