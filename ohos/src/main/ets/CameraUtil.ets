@@ -18,7 +18,7 @@ import common from '@ohos.app.ability.common';
 import { camera } from '@kit.CameraKit';
 import Log from '@ohos/flutter_ohos/src/main/ets/util/Log';
 
-const TAG: string = "CameraUtil";
+const TAG: string = 'CameraUtil';
 
 /**
  * 如果获取对象失败，说明相机可能被占用或无法使用。如果被占用，须等到相机被释放后才能重新获取。
@@ -48,19 +48,23 @@ export function createSession(cameraManager: camera.CameraManager, mode: camera.
   return photoSession;
 }
 
-export function hasFlashUnit(context: common.BaseContext):boolean {
-  let status: boolean = true;
-  /*
+export function hasFlashUnit(context: common.BaseContext): boolean {
   try {
-    let cameraManager = getCameraManager(context)!;
-    let photoSession = createSession(cameraManager, camera.SceneMode.NORMAL_PHOTO)!;
+    const cameraManager = getCameraManager(context);
+    if (!cameraManager) {
+      return false;
+    }
+    const photoSession = createSession(cameraManager, camera.SceneMode.NORMAL_PHOTO);
+    if (!photoSession) {
+      return false;
+    }
     photoSession.beginConfig();
-    status = photoSession.hasFlash();
+    const status = photoSession.hasFlash();
+    photoSession.release();
+    return status;
   } catch (error) {
-    // 失败返回错误码error.code并处理
-    let err = error as BusinessError;
+    const err = error as BusinessError;
     Log.e(TAG, `The hasFlash call failed. error code: ${err.code}`);
+    return false;
   }
-  */
-  return status;
 }

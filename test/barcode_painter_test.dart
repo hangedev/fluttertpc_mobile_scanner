@@ -259,5 +259,81 @@ void main() {
         (widthRatio: 1.0, heightRatio: 1.0),
       );
     });
+
+    test('calculateBoxFitRatio with zero dimensions', () {
+      expect(
+        calculateBoxFitRatio(
+          BoxFit.contain,
+          Size.zero,
+          const Size(400, 400),
+        ),
+        (widthRatio: 1.0, heightRatio: 1.0),
+      );
+
+      expect(
+        calculateBoxFitRatio(
+          BoxFit.contain,
+          const Size(200, 100),
+          Size.zero,
+        ),
+        (widthRatio: 1.0, heightRatio: 1.0),
+      );
+    });
+
+    test('calculateBoxFitRatio with negative dimensions', () {
+      expect(
+        calculateBoxFitRatio(
+          BoxFit.fill,
+          const Size(-200, 100),
+          const Size(400, 400),
+        ),
+        (widthRatio: 1.0, heightRatio: 1.0),
+      );
+    });
+  });
+
+  group('BarcodePainter constructor', () {
+    test('strokeWidth defaults to 4.0', () {
+      final textPainter = TextPainter(
+        textAlign: TextAlign.center,
+        textDirection: TextDirection.ltr,
+      );
+
+      final painter = BarcodePainter(
+        barcodeCorners: [],
+        barcodeSize: Size.zero,
+        barcodeValue: '',
+        boxFit: BoxFit.contain,
+        cameraPreviewSize: Size.zero,
+        color: Colors.blue,
+        style: PaintingStyle.stroke,
+        textPainter: textPainter,
+        deviceOrientation: DeviceOrientation.portraitUp,
+      );
+
+      expect(painter.strokeWidth, 4.0);
+    });
+
+    test('strokeWidth can be set to custom value', () {
+      final textPainter = TextPainter(
+        textAlign: TextAlign.center,
+        textDirection: TextDirection.ltr,
+      );
+
+      final painter = BarcodePainter(
+        barcodeCorners: [],
+        barcodeSize: Size.zero,
+        barcodeValue: '',
+        boxFit: BoxFit.contain,
+        cameraPreviewSize: Size.zero,
+        color: Colors.blue,
+        style: PaintingStyle.stroke,
+        strokeWidth: 2.0,
+        textPainter: textPainter,
+        deviceOrientation: DeviceOrientation.portraitUp,
+      );
+
+      expect(painter.strokeWidth, 2.0);
+    });
   });
 }

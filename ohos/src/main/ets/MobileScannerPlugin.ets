@@ -32,13 +32,12 @@ import { Barcode, BarcodeFormat, BarcodeType } from './Barcode';
 import { AsyncCallback, BusinessError, Callback } from '@kit.BasicServicesKit';
 import { display } from '@kit.ArkUI';
 import { Point } from '@ohos.UiTest';
-import { hasFlashUnit, getCameraManager } from './CameraUtil';
 import { image } from '@kit.ImageKit';
 import { camera } from '@kit.CameraKit';
 import { effectKit } from '@kit.ArkGraphics2D';
 import sensor from '@ohos.sensor';
 
-const TAG: string = "MobileScannerPlugin";
+const TAG: string = 'MobileScannerPlugin';
 
 enum TorchState {
   off = 0,
@@ -58,6 +57,12 @@ enum Angle {
   MINUS_45 = -45,
   PLUS_135 = 135,
   MINUS_135 = -135,
+}
+
+// 定义接口（推荐）
+interface Size {
+  width: number;
+  height: number;
 }
 
 class DeviceOrientationListener implements StreamHandler {
@@ -132,19 +137,40 @@ class DeviceOrientationListener implements StreamHandler {
   }
 }
 
+class BarcodeEventStreamHandler implements StreamHandler {
+  private plugin: MobileScannerPlugin;
+
+  constructor(plugin: MobileScannerPlugin) {
+    this.plugin = plugin;
+  }
+
+  onListen(args: Object, eventSink: EventSink): void {
+    this.plugin.setEventSink(eventSink);
+  }
+
+  onCancel(args: Object): void {
+    this.plugin.setEventSink(null);
+  }
+}
+
 export class MobileScannerPlugin implements FlutterPlugin, MethodCallHandler, AbilityAware {
   getUniqueClassName(): string {
-    return "MobileScannerPlugin";
+    return 'MobileScannerPlugin';
   }
 
   onAttachedToAbility(binding: AbilityPluginBinding): void {
-    Log.i(TAG, "onAttachedToAbility");
+    Log.i(TAG, 'onAttachedToAbility');
     this.ability = binding.getAbility()
   }
 
   onDetachedFromAbility(): void {
-    Log.i(TAG, "onDetachedFromAbility");
+    Log.i(TAG, 'onDetachedFromAbility');
+    this.releaseScannerResources();
     this.ability = null;
+  }
+
+  setEventSink(eventSink: EventSink | null): void {
+    this.eventSink = eventSink;
   }
 
   private methodChannel: MethodChannel | null = null;
@@ -178,33 +204,38 @@ export class MobileScannerPlugin implements FlutterPlugin, MethodCallHandler, Ab
   private scanWindow: Array<number> | null = null; // scanWindow，扫描区域
   private imageBuffer: Uint8Array | null = null;
   private isPaused:boolean = false
+  private isDetached: boolean = false;
+  private retryTimeoutId: number = -1;
+  private rescanTimeoutId: number = -1;
+  private barcodeEventStreamHandler: BarcodeEventStreamHandler | null = null;
+  private scanCallback: AsyncCallback<scanBarcode.ScanResult[]> | null = null;
+  private frameCallback: AsyncCallback<customScan.ScanFrame> | null = null;
 
   publishEvent(event: ESObject) {
+    if (this.isDetached) {
+      return;
+    }
     this.eventSink?.success(event)
   }
 
   onAttachedToEngine(binding: FlutterPluginBinding): void {
+    this.isDetached = false;
     this.binding = binding;
     this.applicationContext = binding.getApplicationContext();
     this.methodChannel =
-      new MethodChannel(binding.getBinaryMessenger(), "dev.steenbakker.mobile_scanner/scanner/method");
+      new MethodChannel(binding.getBinaryMessenger(), 'dev.steenbakker.mobile_scanner/scanner/method');
     this.methodChannel.setMethodCallHandler(this);
-    this.eventChannel = new EventChannel(binding.getBinaryMessenger(), "dev.steenbakker.mobile_scanner/scanner/event");
-    this.eventChannel.setStreamHandler({
-      onListen: (args: Object, eventSink: EventSink) => {
-        this.eventSink = eventSink;
-      },
-      onCancel: () => {
-      }
-    });
+    this.eventChannel = new EventChannel(binding.getBinaryMessenger(), 'dev.steenbakker.mobile_scanner/scanner/event');
+    this.barcodeEventStreamHandler = new BarcodeEventStreamHandler(this);
+    this.eventChannel.setStreamHandler(this.barcodeEventStreamHandler);
     
     // Initialize device orientation channel
     this.deviceOrientationListener = new DeviceOrientationListener();
-    this.deviceOrientationChannel = new EventChannel(binding.getBinaryMessenger(), "dev.steenbakker.mobile_scanner/scanner/deviceOrientation");
+    this.deviceOrientationChannel = new EventChannel(binding.getBinaryMessenger(), 'dev.steenbakker.mobile_scanner/scanner/deviceOrientation');
     this.deviceOrientationChannel.setStreamHandler(this.deviceOrientationListener);
     
     // texture
-    const textureRegistry = this.binding!.getTextureRegistry();
+    const textureRegistry = binding.getTextureRegistry();
     this.textureId = textureRegistry.getTextureId();
     const surfaceTextureEntry = textureRegistry.registerTexture(this.textureId);
     this.surfaceId = surfaceTextureEntry.getSurfaceId().toString();
@@ -212,27 +243,135 @@ export class MobileScannerPlugin implements FlutterPlugin, MethodCallHandler, Ab
   }
 
   onDetachedFromEngine(binding: FlutterPluginBinding): void {
-    this.applicationContext = null;
+    this.isDetached = true;
+    this.releaseScannerResources();
+    this.eventSink = null;
     this.methodChannel?.setMethodCallHandler(null);
     this.methodChannel = null;
     this.eventChannel?.setStreamHandler(null);
     this.eventChannel = null;
-    
-    // Clean up device orientation channel
+    this.barcodeEventStreamHandler = null;
+
     this.deviceOrientationChannel?.setStreamHandler(null);
     this.deviceOrientationListener?.stop();
     this.deviceOrientationChannel = null;
     this.deviceOrientationListener = null;
-    
-    this.isStart = false;
+
     this.scanWindow = null;
     this.imageBuffer = null;
-    binding.getTextureRegistry().unregisterTexture(this.textureId);
+    this.applicationContext = null;
+    this.binding = null;
+    if (this.textureId !== null) {
+      binding.getTextureRegistry().unregisterTexture(this.textureId);
+    }
+    this.textureId = null;
+    this.surfaceId = null;
+  }
+
+  private releaseScannerResources(): void {
+    if (this.retryTimeoutId >= 0) {
+      clearTimeout(this.retryTimeoutId);
+      this.retryTimeoutId = -1;
+    }
+    if (this.rescanTimeoutId >= 0) {
+      clearTimeout(this.rescanTimeoutId);
+      this.rescanTimeoutId = -1;
+    }
+    if (this.isStart || this.isPaused) {
+      try {
+        customScan.stop();
+      } catch (e) {
+        Log.e(TAG, `Failed to stop customScan: ${JSON.stringify(e)}`);
+      }
+      try {
+        customScan.release();
+      } catch (e) {
+        Log.e(TAG, `Failed to release customScan: ${JSON.stringify(e)}`);
+      }
+    }
+    this.isStart = false;
+    this.isPaused = false;
+    this.imageBuffer = null;
+    this.clearCallbacks();
+  }
+
+  private clearCallbacks(): void {
+    this.scanCallback = null;
+    this.frameCallback = null;
+  }
+
+  private initCallbacks(): void {
+    if (this.scanCallback && this.frameCallback) {
+      return;
+    }
+    this.scanCallback = async (error: BusinessError, result: scanBarcode.ScanResult[]) => {
+      if (this.isDetached) {
+        return;
+      }
+      if (error && error.code) {
+        Log.e(TAG, `Failed to get ScanResult by callback. Code: ${error.code}, message: ${error.message}`);
+        this.retryCamera(error);
+        return;
+      }
+      const barcodes: Barcode[] = result.map(item => this.buildBarcodeFromScanResult(item));
+      this.callback(barcodes, this.imageBuffer, this.scanWidth, this.scanHeight);
+    };
+    this.frameCallback = async (error: BusinessError, frameResult: customScan.ScanFrame) => {
+      if (this.isDetached) {
+        return;
+      }
+      this.imageBuffer = null;
+      if (error) {
+        Log.e(TAG, `Failed to get ScanFrame by callback. Code: ${error.code}, message: ${error.message}`);
+        return;
+      }
+      if (frameResult && this.returnImage) {
+        let imageResource: image.ImageSource | null = null;
+        let pixelMap: image.PixelMap | null = null;
+        let packer: image.ImagePacker | null = null;
+        try {
+          const eventWidth = frameResult.width;
+          const eventHeight = frameResult.height;
+          let sourcePotions: image.SourceOptions = {
+            sourceDensity: 120,
+            sourcePixelFormat: image.PixelMapFormat.NV21,
+            sourceSize: { height: eventHeight, width: eventWidth }
+          }
+          imageResource = image.createImageSource(frameResult.byteBuffer, sourcePotions);
+          let opts: image.InitializationOptions = {
+            editable: true,
+            pixelFormat: image.PixelMapFormat.RGBA_8888,
+            size: { height: eventHeight, width: eventWidth }
+          }
+          pixelMap = await imageResource.createPixelMap(opts);
+          pixelMap.rotateSync(camera.ImageRotation.ROTATION_90);
+          if (this.invertImage) {
+            const filter = effectKit.createEffect(pixelMap);
+            if (filter) {
+              filter.invert();
+              const effectPixelMap = await filter.getEffectPixelMap();
+              pixelMap.release();
+              pixelMap = effectPixelMap;
+            }
+          }
+          packer = image.createImagePacker();
+          let packingOpt: image.PackingOption = { format: 'image/jpeg', quality: 100 };
+          let imgBuffer = await packer.packing(pixelMap, packingOpt);
+          this.imageBuffer = new Uint8Array(imgBuffer);
+        } catch (e) {
+          Log.e(TAG, `Failed to create imageBuffer: ${JSON.stringify(e)}`);
+        } finally {
+          packer?.release();
+          pixelMap?.release();
+          imageResource?.release();
+        }
+      }
+    };
   }
 
   onMethodCall(call: MethodCall, result: MethodResult): void {
     try {
-      if (call.method === "state") {
+      if (call.method === 'state') {
         checkPermissions(cameraPermission).then(hasCameraPermission => {
           if (hasCameraPermission) {
             result.success(1)
@@ -242,56 +381,82 @@ export class MobileScannerPlugin implements FlutterPlugin, MethodCallHandler, Ab
         }).catch((error: BusinessError) => {
           result.error(String(error.code), error.message, null);
         });
-      } else if (call.method === "request") {
-        requestPermissions(this.ability!.context, (err, msg) => {
+      } else if (call.method === 'request') {
+        if (!this.ability?.context) {
+          result.error('MOBILE_SCANNER_GENERIC_ERROR', 'Ability context is not available', null);
+          return;
+        }
+        requestPermissions(this.ability.context, (err, msg) => {
           if (err) {
             result.success(false)
           } else {
             result.success(true)
           }
         });
-      } else if (call.method === "start") {
+      } else if (call.method === 'start') {
         this.start(call, result)
-      } else if (call.method === "toggleTorch") {
+      } else if (call.method === 'toggleTorch') {
         this.toggleTorch(call, result)
-      } else if (call.method === "stop") {
-        this.stop(result)
-      } else if (call.method === "analyzeImage") {
+      } else if (call.method === 'stop') {
+        this.stop(call, result)
+      } else if (call.method === 'analyzeImage') {
         this.analyzeImage(call, result)
-      } else if (call.method === "setScale") {
+      } else if (call.method === 'setScale') {
         this.setScale(call, result)
-      } else if (call.method === "resetScale") {
+      } else if (call.method === 'resetScale') {
         this.resetScale(result)
-      } else if (call.method === "updateScanWindow") {
+      } else if (call.method === 'updateScanWindow') {
         this.updateScanWindow(call, result)
-      }  else if (call.method === "pause") {
+      }  else if (call.method === 'pause') {
         this.pause(call, result)
-      } else if (call.method === "setFocus") {
+      } else if (call.method === 'setFocus') {
         this.setFocus(call, result)
       } else {
         result.notImplemented()
       }
     } catch (err) {
-      result.error("Name not found", err.message, null)
+      result.error('MOBILE_SCANNER_GENERIC_ERROR', err.message, null)
     }
   }
 
+  private validateStartArguments(call: MethodCall, result: MethodResult): boolean {
+    this.torch = call.argument('torch') ?? false;
+    this.facing = call.argument('facing') ?? 0;
+    if (this.facing < 0 || this.facing > 2) {
+      result.error('INVALID_ARGUMENT', 'facing must be 0, 1, or 2', null);
+      return false;
+    }
+    this.formats = call.argument('formats');
+    this.returnImage = call.argument('returnImage') ?? false;
+    this.speed = call.argument('speed') ?? 1;
+    if (this.speed < 0 || this.speed > 2) {
+      result.error('INVALID_ARGUMENT', 'speed must be between 0 and 2', null);
+      return false;
+    }
+    this.timeout = call.argument('timeout') ?? 250;
+    if (this.timeout < 0) {
+      result.error('INVALID_ARGUMENT', 'timeout must be greater than or equal to 0', null);
+      return false;
+    }
+    this.cameraResolutionValues = call.argument('cameraResolution');
+    this.useNewCameraSelector = call.argument('useNewCameraSelector') ?? false;
+    this.autoZoom = call.argument('autoZoom') ?? false;
+    this.initialZoom = call.argument('initialZoom') ?? 1;
+    if (this.initialZoom < 0 || this.initialZoom > 1) {
+      result.error('INVALID_ARGUMENT', 'initialZoom must be between 0.0 and 1.0', null);
+      return false;
+    }
+    this.invertImage = call.argument('invertImage') ?? false;
+    return true;
+  }
+
   async start(call: MethodCall, result: MethodResult) {
-    this.torch = call.argument("torch") ?? false
-    this.facing = call.argument("facing") ?? 0
-    this.formats = call.argument("formats")
-    this.returnImage = call.argument("returnImage") ?? false
-    this.speed = call.argument("speed") ?? 1
-    this.timeout = call.argument("timeout") ?? 250
-    this.cameraResolutionValues = call.argument("cameraResolution")
-    this.useNewCameraSelector = call.argument("useNewCameraSelector") ?? false
-    this.autoZoom = call.argument("autoZoom") ?? false
-    this.initialZoom = call.argument("initialZoom") ?? 1
-    this.invertImage = call.argument("invertImage") ?? false
+    if (!this.validateStartArguments(call, result)) {
+      return;
+    }
 
     this.scanWindow = null;
     this.retryScanTimes = 0;
-    this.isStart = true;
     this.isPaused = false;
     let scanTypes = [scanCore.ScanType.ALL]
     if (this.formats) {
@@ -308,150 +473,163 @@ export class MobileScannerPlugin implements FlutterPlugin, MethodCallHandler, Ab
       enableMultiMode: true,
       enableAlbum: true
     }
-    this.startCamera();
+    try {
+      if (!this.startCamera()) {
+        this.isStart = false;
+        result.error('MOBILE_SCANNER_CAMERA_ERROR', 'Failed to start camera', null);
+        return;
+      }
+      this.isStart = true;
+    } catch (e) {
+      this.isStart = false;
+      result.error('MOBILE_SCANNER_CAMERA_ERROR', `${e.message}`, null);
+      return;
+    }
     // dart 中接收的 width 和 height 会转换为 double 类型，返回整数会导致异常
     result.success({
-      "textureId": this.textureId,
-      "size": {
-        "width": this.scanWidth,
-        "height": this.scanHeight
+      'textureId': this.textureId,
+      'size': {
+        'width': this.scanWidth,
+        'height': this.scanHeight
       },
-      "torchable": hasFlashUnit(this.applicationContext!),
-      "numberOfCameras": 1,
-      "currentTorchState": customScan.getFlashLightStatus() ? TorchState.on : TorchState.off
+      'numberOfCameras': 1,
+      'currentTorchState': customScan.getFlashLightStatus() ? TorchState.on : TorchState.off,
+      'cameraDirection': this.facing,
+      'naturalDeviceOrientation': NativeOrientation.portraitUp,
+      'sensorOrientation': 90,
+      'handlesCropAndRotation': false
     });
   }
 
-  // 重启相机流
   retryCamera(error: BusinessError) {
+    if (this.isDetached) {
+      return;
+    }
     if (this.retryScanTimes < 3 && error.code === scanCore.ScanErrorCode.INTERNAL_ERROR) {
       this.retryScanTimes++;
-      let timeId = setTimeout(async () => {
-        // 先暂停并释放相机流
-        await this.stop(null);
-        // 重启相机流
-        this.startCamera();
-        clearTimeout(timeId);
+      if (this.retryTimeoutId >= 0) {
+        clearTimeout(this.retryTimeoutId);
+      }
+      this.retryTimeoutId = setTimeout(async () => {
+        this.retryTimeoutId = -1;
+        if (this.isDetached) {
+          return;
+        }
+        await this.stop(null, null);
+        this.isPaused = false;
+        if (this.startCamera()) {
+          this.isStart = true;
+        } else {
+          this.isStart = false;
+        }
       }, 100)
     }
   }
-  // 启动相机流
-  startCamera() {
-    customScan.init(this.options);
-    this.setDisplay()
-    this.startScan()
-    if (this.torch) {
-      customScan.openFlashLight()
-    } else {
-      customScan.closeFlashLight()
+
+  startCamera(): boolean {
+    try {
+      customScan.init(this.options);
+    } catch (e) {
+      Log.e(TAG, `Failed to init customScan: ${JSON.stringify(e)}`);
+      return false;
     }
-    customScan.setZoom(this.initialZoom)
-    if (this.autoZoom) {
-      customScan.setAutoZoomEnabled(true)
-    } else {
-      customScan.setAutoZoomEnabled(false)
+    try {
+      this.setDisplay();
+    } catch (e) {
+      Log.e(TAG, `Failed to set display: ${JSON.stringify(e)}`);
+      return false;
+    }
+    if (!this.startScan()) {
+      return false;
+    }
+    try {
+      if (this.torch) {
+        customScan.openFlashLight();
+      } else {
+        customScan.closeFlashLight();
+      }
+      customScan.setZoom(this.initialZoom);
+      customScan.setAutoZoomEnabled(this.autoZoom);
+    } catch (e) {
+      Log.e(TAG, `Failed to configure customScan: ${JSON.stringify(e)}`);
     }
     this.publishEvent({
       name: 'torchState',
       data: customScan.getFlashLightStatus() ? TorchState.on : TorchState.off
     });
+    return true;
   }
 
-  // 返回自定义扫描结果的回调
-  private scanCallback: AsyncCallback<scanBarcode.ScanResult[]> =
-    async (error: BusinessError, result: scanBarcode.ScanResult[]) => {
-      if (error && error.code) {
-        Log.e(TAG, `Failed to get ScanResult by callback. Code: ${error.code}, message: ${error.message}`);
-        this.retryCamera(error);
-        return;
-      }
-      // 解析码值结果跳转应用服务页
-      const _r: Barcode[] = result.map(item => {
-        let size:ESObject = {
-          width:this.toDoubleType(item.scanCodeRect!.right - item.scanCodeRect!.left),
-          height:this.toDoubleType(item.scanCodeRect!.bottom - item.scanCodeRect!.top)
-        };
-
-        return {
-          displayValue: item.originalValue,
-          rawValue: item.originalValue,
-          format: Barcode.convertScanType(item.scanType),
-          type: BarcodeType.unknown,
-          corners: [
-            { x: this.toDoubleType(item.scanCodeRect!.left),  y: this.toDoubleType(item.scanCodeRect!.top) } as Point,
-            { x: this.toDoubleType(item.scanCodeRect!.right),  y: this.toDoubleType(item.scanCodeRect!.top) } as Point,
-            { x: this.toDoubleType(item.scanCodeRect!.right),  y: this.toDoubleType(item.scanCodeRect!.bottom) } as Point,
-            { x: this.toDoubleType(item.scanCodeRect!.left),  y: this.toDoubleType(item.scanCodeRect!.bottom) } as Point,
-          ],
-          size:size
-        } as Barcode;
-      })
-      this.callback(_r, this.imageBuffer, this.scanWidth, this.scanHeight);
+  startScan(): boolean {
+    if (!this.surfaceId) {
+      Log.e(TAG, 'surfaceId is null, cannot start scan');
+      return false;
     }
-  // 返回相机帧的回调
-  private frameCallback: AsyncCallback<customScan.ScanFrame> =
-    async (error: BusinessError, frameResult: customScan.ScanFrame) => {
-      this.imageBuffer = null;
-      if (error) {
-        Log.e(TAG, `Failed to get ScanFrame by callback. Code: ${error.code}, message: ${error.message}`);
-        return;
-      }
-      if (frameResult && this.returnImage) {
-        try {
-          const EventWidth = frameResult.width;
-          const EventHeight = frameResult.height;
-
-          let sourcePotions: image.SourceOptions = {
-            sourceDensity: 120,
-            sourcePixelFormat: image.PixelMapFormat.NV21,
-            sourceSize: { height: EventHeight, width: EventWidth }
-          }
-          let imageResource = image.createImageSource(frameResult.byteBuffer, sourcePotions)
-          let opts: image.InitializationOptions = {
-            editable: true,
-            pixelFormat: image.PixelMapFormat.RGBA_8888,
-            size: { height: EventHeight, width: EventWidth }
-          }
-          let pixelMap: image.PixelMap = await imageResource.createPixelMap(opts)
-          // 修正相机预览流方向
-          pixelMap.rotateSync(camera.ImageRotation.ROTATION_90)
-          
-          // 应用颜色反转效果
-          if (this.invertImage) {
-            const filter = effectKit.createEffect(pixelMap);
-            if (filter) {
-              filter.invert();
-            }
-            pixelMap = await filter.getEffectPixelMap();
-          }
-          
-          let packer: image.ImagePacker = image.createImagePacker()
-          let packingOpt: image.PackingOption = { format: "image/jpeg", quality: 100 }
-          let imgBuffer = await packer.packing(pixelMap, packingOpt);
-          this.imageBuffer = new Uint8Array(imgBuffer)
-        } catch (e) {
-          Log.e(TAG, `Failed to create imageBuffer`);
-        }
-      }
+    this.initCallbacks();
+    if (!this.scanCallback || !this.frameCallback) {
+      Log.e(TAG, 'Scan callbacks are not initialized');
+      return false;
     }
-
-  startScan() {
     try {
       const viewControl: customScan.ViewControl = {
         width: this.scanWidth,
         height: this.scanHeight,
-        surfaceId: this.surfaceId!,
+        surfaceId: this.surfaceId,
       };
-      customScan.start(viewControl, this.scanCallback, this.frameCallback)
+      customScan.start(viewControl, this.scanCallback, this.frameCallback);
+      return true;
     } catch (err) {
-      Log.e(TAG, `Failed to start scan: ${err.message}`)
+      Log.e(TAG, `Failed to start scan: ${err.message}`);
+      return false;
     }
+  }
+
+  private buildBarcodeFromScanResult(item: scanBarcode.ScanResult, useAnalyzeTransform: boolean = false): Barcode {
+    const rect = item.scanCodeRect;
+    let size: Size = { width: 0, height: 0 };
+    let corners: Point[] = [];
+    if (useAnalyzeTransform && item.cornerPoints != undefined && item.cornerPoints != null) {
+      const cornerPoints = item.cornerPoints;
+      corners = [
+        { x: this.ensureDouble(this.scanWidth - cornerPoints[0].y), y: this.ensureDouble(cornerPoints[0].x)},
+        { x: this.ensureDouble(this.scanWidth - cornerPoints[1].y), y: this.ensureDouble(cornerPoints[1].x)},
+        { x: this.ensureDouble(this.scanWidth - cornerPoints[2].y), y: this.ensureDouble(cornerPoints[2].x)},
+        { x: this.ensureDouble(this.scanWidth - cornerPoints[3].y), y: this.ensureDouble(cornerPoints[3].x)},
+      ];
+    } else if (rect) {
+      corners = [
+        { x: this.ensureDouble(rect.left), y: this.ensureDouble(rect.top) } as Point,
+        { x: this.ensureDouble(rect.right), y: this.ensureDouble(rect.top) } as Point,
+        { x: this.ensureDouble(rect.right), y: this.ensureDouble(rect.bottom) } as Point,
+        { x: this.ensureDouble(rect.left), y: this.ensureDouble(rect.bottom) } as Point,
+      ];
+    }
+    if (rect) {
+      size = {
+        width: this.ensureDouble(rect.right - rect.left),
+        height: this.ensureDouble(rect.bottom - rect.top)
+      };
+    }
+    return {
+      displayValue: item.originalValue,
+      rawValue: item.originalValue,
+      format: Barcode.convertScanType(item.scanType),
+      type: BarcodeType.unknown,
+      corners: corners,
+      size: size
+    } as Barcode;
   }
 
   // 竖屏时获取屏幕尺寸，设置预览流全屏示例
   setDisplay() {
     // 以手机为例计算宽高
-    let displayClass = display.getDefaultDisplaySync();
+    let displayClass: display.Display | null = null;
+    try {
+      displayClass = display.getDefaultDisplaySync();
+    } catch (e) {
+      Log.e(TAG, `Failed to get default display: ${JSON.stringify(e)}`);
+      return;
+    }
     if (displayClass !== null) {
       let orientation = displayClass.orientation.valueOf()
       if (!!this.cameraResolutionValues && this.cameraResolutionValues.length >= 2) {
@@ -459,7 +637,7 @@ export class MobileScannerPlugin implements FlutterPlugin, MethodCallHandler, Ab
         let height = this.cameraResolutionValues[1];
         if (orientation === 0 || orientation === 2) {
           let radio = height / width;
-          this.scanWidth = this.toDoubleType(px2vp(displayClass.width));
+          this.scanWidth = this.ensureDouble(px2vp(displayClass.width));
           if (radio <= this.resolutionRatio[2]) {
             this.scanHeight = this.scanWidth;
           }else if (radio <= this.resolutionRatio[1]) {
@@ -469,7 +647,7 @@ export class MobileScannerPlugin implements FlutterPlugin, MethodCallHandler, Ab
           }
         }else {
           let radio = width / height;
-          this.scanHeight = this.toDoubleType(px2vp(displayClass.height));
+          this.scanHeight = this.ensureDouble(px2vp(displayClass.height));
           if (radio <= this.resolutionRatio[2]) {
             this.scanWidth = this.scanHeight;
           }else if (radio <= this.resolutionRatio[1]) {
@@ -480,17 +658,17 @@ export class MobileScannerPlugin implements FlutterPlugin, MethodCallHandler, Ab
         }
       }else {
         if (orientation === 0 || orientation === 2) {
-          this.scanWidth = this.toDoubleType(px2vp(displayClass.width));
+          this.scanWidth = this.ensureDouble(px2vp(displayClass.width));
           this.scanHeight = this.scanWidth;
         }else {
-          this.scanHeight = this.toDoubleType(px2vp(displayClass.height));
+          this.scanHeight = this.ensureDouble(px2vp(displayClass.height));
           this.scanWidth = this.scanHeight;
         }
       }
     }
   }
 
-  toDoubleType(number: number): number {
+  ensureDouble(number: number): number {
     if (Number.isInteger(number)){
       number += 0.00000000001
     }
@@ -498,29 +676,49 @@ export class MobileScannerPlugin implements FlutterPlugin, MethodCallHandler, Ab
   }
 
   async pause(call: MethodCall, result: MethodResult) {
-    let force: boolean = call.argument("force") ?? false
+    let force: boolean = call.argument('force') ?? false
 
     if (this.isStart || force) {
-      await customScan.stop();
-      await customScan.release();
+      try {
+        await customScan.stop();
+        await customScan.release();
+      } catch (e) {
+        Log.e(TAG, `Failed to pause scanner: ${JSON.stringify(e)}`);
+        try {
+          await customScan.release();
+        } catch (releaseError) {
+          Log.e(TAG, `Failed to release customScan during pause: ${JSON.stringify(releaseError)}`);
+        }
+      }
       this.isPaused = true;
+      this.isStart = false;
     }
 
     result?.success(null)
   }
 
-  async stop(result: MethodResult | null) {
-    if (this.isStart || this.isPaused) {
+  async stop(call: MethodCall | null, result: MethodResult | null) {
+    let force: boolean = false;
+    if (call) {
+      force = call.argument('force') ?? false;
+    }
+    if (this.isStart || this.isPaused || force) {
       this.isPaused = false;
+      this.isStart = false;
+      this.imageBuffer = null;
+      if (this.rescanTimeoutId >= 0) {
+        clearTimeout(this.rescanTimeoutId);
+        this.rescanTimeoutId = -1;
+      }
       try {
-        this.isStart = false;
         await customScan.stop();
         await customScan.release();
       } catch (e) {
+        Log.e(TAG, `Failed to stop scanner: ${JSON.stringify(e)}`);
         try {
           await customScan.release();
-        } catch (e) {
-          this.isStart = true;
+        } catch (releaseError) {
+          Log.e(TAG, `Failed to release customScan: ${JSON.stringify(releaseError)}`);
         }
       }
     }
@@ -542,8 +740,11 @@ export class MobileScannerPlugin implements FlutterPlugin, MethodCallHandler, Ab
   }
 
   analyzeImage(call: MethodCall, result: MethodResult) {
-    let formats:number[] = call.argument("formats")
-    let filePath: string = call.argument("filePath")
+    let filePath: string = call.argument('filePath')
+    if (!filePath || filePath.length === 0) {
+      result.error('INVALID_ARGUMENT', 'filePath is required', null);
+      return;
+    }
 
     const options: scanBarcode.ScanOptions = {
       scanTypes: [scanCore.ScanType.ALL],
@@ -553,41 +754,17 @@ export class MobileScannerPlugin implements FlutterPlugin, MethodCallHandler, Ab
     let inputImage: detectBarcode.InputImage = { uri: filePath }
     detectBarcode.decode(inputImage, options, (error: BusinessError, scanResult: Array<scanBarcode.ScanResult>) => {
       if (error && error.code) {
-        result.error("MOBILE_SCANNER_BARCODE_ERROR", JSON.stringify(error) , null)
+        result.error('MOBILE_SCANNER_BARCODE_ERROR', JSON.stringify(error) , null)
         return
       }
       if (scanResult.length == 0) {
         result.success({
           name: 'barcode',
-          data: null
+          data: []
         })
         return
       }
-      const barcodes: Barcode[] = scanResult.map(item => {
-        let cornerPoints = item.cornerPoints;
-        let corners: Array<Point> = []
-        if (cornerPoints != undefined && cornerPoints != null) {
-          corners = [
-            { x: this.toDoubleType(this.scanWidth - cornerPoints[0].y), y: this.toDoubleType(cornerPoints[0].x)},
-            { x: this.toDoubleType(this.scanWidth - cornerPoints[1].y), y: this.toDoubleType(cornerPoints[1].x)},
-            { x: this.toDoubleType(this.scanWidth - cornerPoints[2].y), y: this.toDoubleType(cornerPoints[2].x)},
-            { x: this.toDoubleType(this.scanWidth - cornerPoints[3].y), y: this.toDoubleType(cornerPoints[3].x)},
-          ]
-        }
-
-        let size:ESObject = {
-          width:this.toDoubleType(item.scanCodeRect!.right - item.scanCodeRect!.left),
-          height:this.toDoubleType(item.scanCodeRect!.bottom - item.scanCodeRect!.top)
-        }
-        return {
-          displayValue: item.originalValue,
-          rawValue: item.originalValue,
-          format: Barcode.convertScanType(item.scanType),
-          type: BarcodeType.unknown,
-          corners: corners,
-          size: size
-        } as Barcode;
-      });
+      const barcodes: Barcode[] = scanResult.map(item => this.buildBarcodeFromScanResult(item, true));
       result.success({
         name: 'barcode',
         data: barcodes
@@ -597,15 +774,20 @@ export class MobileScannerPlugin implements FlutterPlugin, MethodCallHandler, Ab
 
   setScale(call: MethodCall, result: MethodResult) {
     let zoomValue: number = call.args as number;
+    if (zoomValue < 0 || zoomValue > 1) {
+      result.error('INVALID_ARGUMENT', 'zoomScale must be between 0.0 and 1.0', null);
+      return;
+    }
     try {
       customScan.setZoom(zoomValue);
       this.publishEvent({
         name: 'zoomScaleState',
         data: zoomValue
       });
-      result.success(true);
+      result.success(null);
     } catch (error) {
-      result.success(false);
+      result.error('MOBILE_SCANNER_SET_SCALE_WHEN_STOPPED_ERROR',
+        'The zoom scale cannot be changed when the camera is stopped.', null);
     }
   }
 
@@ -616,18 +798,22 @@ export class MobileScannerPlugin implements FlutterPlugin, MethodCallHandler, Ab
         name: 'zoomScaleState',
         data: this.initialZoom
       });
-      result.success(true);
+      result.success(null);
     } catch (error) {
-      result.success(false);
+      result.error('MOBILE_SCANNER_SET_SCALE_WHEN_STOPPED_ERROR',
+        'The zoom scale cannot be changed when the camera is stopped.', null);
     }
   }
 
   updateScanWindow(call: MethodCall, result: MethodResult) {
-    this.scanWindow = call.argument("rect")
+    this.scanWindow = call.argument('rect')
     result.success(null)
   }
 
   callback(barcodes: Barcode[], image: Uint8Array | null, width: number, height: number) {
+    if (this.isDetached) {
+      return;
+    }
     barcodes = barcodes.filter(barcode => {
       if (this.scanWindow) {
         return this.isBarcodeInScanWindow(barcode);
@@ -650,19 +836,23 @@ export class MobileScannerPlugin implements FlutterPlugin, MethodCallHandler, Ab
     }
 
     this.publishEvent({
-      "name": "barcode",
-      "data": barcodes,
-      "image": imageinfo
+      'name': 'barcode',
+      'data': barcodes,
+      'image': imageinfo
     })
 
-    // 扫描完成后需要调用重新扫描继续识别
-    setTimeout(() => {
-      if (this.isStart && !this.isPaused) {
-        try {
-          customScan.rescan();
-        } catch (err) {
-          Log.e(TAG, `Failed to rescan: ${err.message}`)
-        }
+    if (this.rescanTimeoutId >= 0) {
+      clearTimeout(this.rescanTimeoutId);
+    }
+    this.rescanTimeoutId = setTimeout(() => {
+      this.rescanTimeoutId = -1;
+      if (this.isDetached || !this.isStart || this.isPaused) {
+        return;
+      }
+      try {
+        customScan.rescan();
+      } catch (err) {
+        Log.e(TAG, `Failed to rescan: ${err.message}`)
       }
     }, this.returnImage ? 250 : 100);
   }
@@ -679,8 +869,8 @@ export class MobileScannerPlugin implements FlutterPlugin, MethodCallHandler, Ab
 
   errorCallback(error: string) {
     this.publishEvent({
-      "name": "error",
-      "data": error
+      'name': 'error',
+      'data': error
     })
   }
 
@@ -695,13 +885,18 @@ export class MobileScannerPlugin implements FlutterPlugin, MethodCallHandler, Ab
   }
 
   setFocus(call: MethodCall, result: MethodResult) {
-    let x: number = call.argument("dx");
-    let y: number = call.argument("dy");
+    let x: number = call.argument('dx');
+    let y: number = call.argument('dy');
+    if (x == null || y == null || x < 0 || x > 1 || y < 0 || y > 1) {
+      result.error('MOBILE_SCANNER_INVALID_FOCUS_POINT',
+        'The focus coordinates are not valid.', null);
+      return;
+    }
     try {
       customScan.setFocusPoint({x:x, y:y});
-      result.success(true);
+      result.success(null);
     } catch (error) {
-      result.success(false);
+      result.error('MOBILE_SCANNER_GENERIC_ERROR', error.message, null);
     }
   }
 }

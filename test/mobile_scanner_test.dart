@@ -162,33 +162,26 @@ void main() {
   });
 
   // TODO(juliansteenbakker): Improve tests in new PR
-  // group('MobileScannerController Tests', () {
-  //   test('start() should call platform start method', () async {
-  //     await mockController.start();
-  //     verify(() => mockController.start()).called(1);
-  //   });
-  //
-  //   test('stop() should call platform stop method', () async {
-  //     await mockController.stop();
-  //     verify(() => mockController.stop()).called(1);
-  //   });
-  //
-  //   test('toggleTorch() should call platform toggleTorch method', () async {
-  //     await mockController.toggleTorch();
-  //     verify(() => mockController.toggleTorch()).called(1);
-  //   });
-  //
-  //   test('switchCamera() should call platform switchCamera method',
-  //       () async {
-  //     await mockController.switchCamera();
-  //     verify(() => mockController.switchCamera()).called(1);
-  //   });
-  //
-  //   test('updateScanWindow() should call platform updateScanWindow method',
-  //       () async {
-  //     const Rect scanWindow = Rect.fromLTWH(10, 10, 100, 100);
-  //     await mockController.updateScanWindow(scanWindow);
-  //     verify(() => mockController.updateScanWindow(scanWindow)).called(1);
-  //   });
-  // });
+  group('MobileScannerController Tests', () {
+    testWidgets('buildCameraView() returns a widget', (tester) async {
+      final widget = mockController.buildCameraView();
+      expect(widget, isA<Widget>());
+    });
+
+    testWidgets('toggleTorch() can be called', (tester) async {
+      await mockController.toggleTorch();
+      verify(() => mockController.toggleTorch()).called(1);
+    });
+
+    testWidgets('switchCamera() can be called', (tester) async {
+      await mockController.switchCamera();
+      verify(() => mockController.switchCamera()).called(1);
+    });
+
+    testWidgets('updateScanWindow() can be called', (tester) async {
+      const scanWindow = Rect.fromLTWH(10, 10, 100, 100);
+      await mockController.updateScanWindow(scanWindow);
+      verify(() => mockController.updateScanWindow(scanWindow)).called(1);
+    });
+  });
 }
