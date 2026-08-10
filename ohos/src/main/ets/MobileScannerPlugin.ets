@@ -24,13 +24,13 @@ import MethodChannel, {
 import MethodCall from '@ohos/flutter_ohos/src/main/ets/plugin/common/MethodCall';
 import Log from '@ohos/flutter_ohos/src/main/ets/util/Log';
 import { AbilityAware, AbilityPluginBinding, ByteBuffer } from '@ohos/flutter_ohos/index';
-import { UIAbility } from '@kit.AbilityKit';
+import { AbilityLifecycleCallback, common, UIAbility } from '@kit.AbilityKit';
 import { cameraPermission, checkPermissions, requestPermissions } from './CameraPermissions';
 import { customScan, scanBarcode, scanCore, detectBarcode } from '@kit.ScanKit';
 import EventChannel, { EventSink, StreamHandler } from '@ohos/flutter_ohos/src/main/ets/plugin/common/EventChannel';
 import { Barcode, BarcodeFormat, BarcodeType } from './Barcode';
 import { AsyncCallback, BusinessError, Callback } from '@kit.BasicServicesKit';
-import { display } from '@kit.ArkUI';
+import { display, window } from '@kit.ArkUI';
 import { Point } from '@ohos.UiTest';
 import { image } from '@kit.ImageKit';
 import { camera } from '@kit.CameraKit';
@@ -153,6 +153,38 @@ class BarcodeEventStreamHandler implements StreamHandler {
   }
 }
 
+class MobileScannerAbilityLifecycleCallback {
+  private plugin: MobileScannerPlugin;
+
+  constructor(plugin: MobileScannerPlugin) {
+    this.plugin = plugin;
+  }
+
+  onAbilityCreate(_ability: UIAbility): void {}
+
+  onAbilityDestroy(_ability: UIAbility): void {}
+
+  onAbilityForeground(_ability: UIAbility): void {
+    this.plugin.handleAbilityForeground();
+  }
+
+  onAbilityBackground(_ability: UIAbility): void {
+    this.plugin.handleAbilityBackground();
+  }
+
+  onAbilityContinue(_ability: UIAbility): void {}
+
+  onWindowStageCreate(_ability: UIAbility, _windowStage: window.WindowStage): void {}
+
+  onWindowStageDestroy(_ability: UIAbility, _windowStage: window.WindowStage): void {}
+
+  onWindowStageActive(_ability: UIAbility, _windowStage: window.WindowStage): void {}
+
+  onWindowStageInactive(_ability: UIAbility, _windowStage: window.WindowStage): void {}
+
+  onNewWant(_ability: UIAbility): void {}
+}
+
 export class MobileScannerPlugin implements FlutterPlugin, MethodCallHandler, AbilityAware {
   getUniqueClassName(): string {
     return 'MobileScannerPlugin';
@@ -160,11 +192,13 @@ export class MobileScannerPlugin implements FlutterPlugin, MethodCallHandler, Ab
 
   onAttachedToAbility(binding: AbilityPluginBinding): void {
     Log.i(TAG, 'onAttachedToAbility');
-    this.ability = binding.getAbility()
+    this.ability = binding.getAbility();
+    this.registerAbilityLifecycleCallback();
   }
 
   onDetachedFromAbility(): void {
     Log.i(TAG, 'onDetachedFromAbility');
+    this.unregisterAbilityLifecycleCallback();
     this.releaseScannerResources();
     this.ability = null;
   }
@@ -176,7 +210,7 @@ export class MobileScannerPlugin implements FlutterPlugin, MethodCallHandler, Ab
   private methodChannel: MethodChannel | null = null;
   private eventChannel: EventChannel | null = null;
   private eventSink: EventSink | null = null
-  private applicationContext: Context | null = null;
+  private applicationContext: common.ApplicationContext | null = null;
   private ability: UIAbility | null = null;
   private textureId: number | null = null;
   private surfaceId: string | null = null;
@@ -210,6 +244,11 @@ export class MobileScannerPlugin implements FlutterPlugin, MethodCallHandler, Ab
   private barcodeEventStreamHandler: BarcodeEventStreamHandler | null = null;
   private scanCallback: AsyncCallback<scanBarcode.ScanResult[]> | null = null;
   private frameCallback: AsyncCallback<customScan.ScanFrame> | null = null;
+  private wasScanningBeforeBackground: boolean = false;
+  private isCustomScanActive: boolean = false;
+  private lifecycleTaskId: number = -1;
+  private abilityLifecycleCallbackId: number = -1;
+  private abilityLifecycleCallback: MobileScannerAbilityLifecycleCallback | null = null;
 
   publishEvent(event: ESObject) {
     if (this.isDetached) {
@@ -221,7 +260,6 @@ export class MobileScannerPlugin implements FlutterPlugin, MethodCallHandler, Ab
   onAttachedToEngine(binding: FlutterPluginBinding): void {
     this.isDetached = false;
     this.binding = binding;
-    this.applicationContext = binding.getApplicationContext();
     this.methodChannel =
       new MethodChannel(binding.getBinaryMessenger(), 'dev.steenbakker.mobile_scanner/scanner/method');
     this.methodChannel.setMethodCallHandler(this);
@@ -242,8 +280,115 @@ export class MobileScannerPlugin implements FlutterPlugin, MethodCallHandler, Ab
     Log.i(TAG, `surfaceId: ${this.surfaceId}`)
   }
 
+  private registerAbilityLifecycleCallback(): void {
+    if (this.abilityLifecycleCallbackId >= 0 || !this.ability) {
+      return;
+    }
+    try {
+      this.applicationContext = this.ability.context.getApplicationContext();
+      this.abilityLifecycleCallback = new MobileScannerAbilityLifecycleCallback(this);
+      this.abilityLifecycleCallbackId =
+        this.applicationContext.on('abilityLifecycle',
+          this.abilityLifecycleCallback as AbilityLifecycleCallback);
+    } catch (e) {
+      Log.e(TAG, `Failed to register ability lifecycle callback: ${JSON.stringify(e)}`);
+    }
+  }
+
+  private unregisterAbilityLifecycleCallback(): void {
+    if (this.abilityLifecycleCallbackId < 0 || !this.applicationContext) {
+      return;
+    }
+    try {
+      this.applicationContext.off('abilityLifecycle', this.abilityLifecycleCallbackId);
+    } catch (e) {
+      Log.e(TAG, `Failed to unregister ability lifecycle callback: ${JSON.stringify(e)}`);
+    }
+    this.abilityLifecycleCallbackId = -1;
+    this.abilityLifecycleCallback = null;
+  }
+
+  handleAbilityBackground(): void {
+    this.scheduleLifecycleTask(() => {
+      this.doAbilityBackground();
+    });
+  }
+
+  handleAbilityForeground(): void {
+    this.scheduleLifecycleTask(() => {
+      this.doAbilityForeground();
+    }, 100);
+  }
+
+  private scheduleLifecycleTask(task: () => void, delayMs: number = 0): void {
+    if (this.lifecycleTaskId >= 0) {
+      clearTimeout(this.lifecycleTaskId);
+    }
+    this.lifecycleTaskId = setTimeout(() => {
+      this.lifecycleTaskId = -1;
+      task();
+    }, delayMs);
+  }
+
+  private doAbilityBackground(): void {
+    if (this.isDetached || this.isPaused || !this.isStart) {
+      return;
+    }
+    this.wasScanningBeforeBackground = true;
+    this.safeReleaseCustomScan();
+  }
+
+  private doAbilityForeground(): void {
+    if (this.isDetached) {
+      return;
+    }
+    const shouldResume = this.wasScanningBeforeBackground;
+    this.wasScanningBeforeBackground = false;
+    if (!shouldResume) {
+      return;
+    }
+    // Camera was already released when entering background; restart only.
+    if (this.startCamera()) {
+      this.isStart = true;
+      this.isPaused = false;
+    } else {
+      Log.e(TAG, 'Failed to resume scanner on foreground');
+      this.isStart = false;
+    }
+  }
+
+  private safeReleaseCustomScan(): void {
+    if (!this.isCustomScanActive) {
+      this.isStart = false;
+      this.imageBuffer = null;
+      return;
+    }
+    if (this.rescanTimeoutId >= 0) {
+      clearTimeout(this.rescanTimeoutId);
+      this.rescanTimeoutId = -1;
+    }
+    try {
+      customScan.stop();
+    } catch (e) {
+      Log.e(TAG, `Failed to stop customScan: ${JSON.stringify(e)}`);
+    }
+    try {
+      customScan.release();
+    } catch (e) {
+      Log.e(TAG, `Failed to release customScan: ${JSON.stringify(e)}`);
+    }
+    this.isCustomScanActive = false;
+    this.isStart = false;
+    this.imageBuffer = null;
+  }
+
   onDetachedFromEngine(binding: FlutterPluginBinding): void {
     this.isDetached = true;
+    if (this.lifecycleTaskId >= 0) {
+      clearTimeout(this.lifecycleTaskId);
+      this.lifecycleTaskId = -1;
+    }
+    this.unregisterAbilityLifecycleCallback();
     this.releaseScannerResources();
     this.eventSink = null;
     this.methodChannel?.setMethodCallHandler(null);
@@ -277,7 +422,7 @@ export class MobileScannerPlugin implements FlutterPlugin, MethodCallHandler, Ab
       clearTimeout(this.rescanTimeoutId);
       this.rescanTimeoutId = -1;
     }
-    if (this.isStart || this.isPaused) {
+    if (this.isCustomScanActive) {
       try {
         customScan.stop();
       } catch (e) {
@@ -289,8 +434,10 @@ export class MobileScannerPlugin implements FlutterPlugin, MethodCallHandler, Ab
         Log.e(TAG, `Failed to release customScan: ${JSON.stringify(e)}`);
       }
     }
+    this.isCustomScanActive = false;
     this.isStart = false;
     this.isPaused = false;
+    this.wasScanningBeforeBackground = false;
     this.imageBuffer = null;
     this.clearCallbacks();
   }
@@ -577,6 +724,7 @@ export class MobileScannerPlugin implements FlutterPlugin, MethodCallHandler, Ab
         surfaceId: this.surfaceId,
       };
       customScan.start(viewControl, this.scanCallback, this.frameCallback);
+      this.isCustomScanActive = true;
       return true;
     } catch (err) {
       Log.e(TAG, `Failed to start scan: ${err.message}`);
@@ -678,20 +826,24 @@ export class MobileScannerPlugin implements FlutterPlugin, MethodCallHandler, Ab
   async pause(call: MethodCall, result: MethodResult) {
     let force: boolean = call.argument('force') ?? false
 
-    if (this.isStart || force) {
-      try {
-        await customScan.stop();
-        await customScan.release();
-      } catch (e) {
-        Log.e(TAG, `Failed to pause scanner: ${JSON.stringify(e)}`);
+    if ((this.isStart && this.isCustomScanActive) || force) {
+      if (this.isCustomScanActive) {
         try {
+          await customScan.stop();
           await customScan.release();
-        } catch (releaseError) {
-          Log.e(TAG, `Failed to release customScan during pause: ${JSON.stringify(releaseError)}`);
+        } catch (e) {
+          Log.e(TAG, `Failed to pause scanner: ${JSON.stringify(e)}`);
+          try {
+            await customScan.release();
+          } catch (releaseError) {
+            Log.e(TAG, `Failed to release customScan during pause: ${JSON.stringify(releaseError)}`);
+          }
         }
+        this.isCustomScanActive = false;
       }
       this.isPaused = true;
       this.isStart = false;
+      this.wasScanningBeforeBackground = false;
     }
 
     result?.success(null)
@@ -705,21 +857,25 @@ export class MobileScannerPlugin implements FlutterPlugin, MethodCallHandler, Ab
     if (this.isStart || this.isPaused || force) {
       this.isPaused = false;
       this.isStart = false;
+      this.wasScanningBeforeBackground = false;
       this.imageBuffer = null;
       if (this.rescanTimeoutId >= 0) {
         clearTimeout(this.rescanTimeoutId);
         this.rescanTimeoutId = -1;
       }
-      try {
-        await customScan.stop();
-        await customScan.release();
-      } catch (e) {
-        Log.e(TAG, `Failed to stop scanner: ${JSON.stringify(e)}`);
+      if (this.isCustomScanActive) {
         try {
+          await customScan.stop();
           await customScan.release();
-        } catch (releaseError) {
-          Log.e(TAG, `Failed to release customScan: ${JSON.stringify(releaseError)}`);
+        } catch (e) {
+          Log.e(TAG, `Failed to stop scanner: ${JSON.stringify(e)}`);
+          try {
+            await customScan.release();
+          } catch (releaseError) {
+            Log.e(TAG, `Failed to release customScan: ${JSON.stringify(releaseError)}`);
+          }
         }
+        this.isCustomScanActive = false;
       }
     }
     result?.success(null)
@@ -821,7 +977,7 @@ export class MobileScannerPlugin implements FlutterPlugin, MethodCallHandler, Ab
         return true;
       }
     });
-    if (barcodes.length == 0) {
+    if (barcodes.length == 0 && this.isCustomScanActive) {
       customScan.rescan();
     }
 
@@ -846,7 +1002,7 @@ export class MobileScannerPlugin implements FlutterPlugin, MethodCallHandler, Ab
     }
     this.rescanTimeoutId = setTimeout(() => {
       this.rescanTimeoutId = -1;
-      if (this.isDetached || !this.isStart || this.isPaused) {
+      if (this.isDetached || !this.isStart || this.isPaused || !this.isCustomScanActive) {
         return;
       }
       try {
