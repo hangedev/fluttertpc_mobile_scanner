@@ -359,34 +359,42 @@ export class ScanHandler {
     }
   }
 
-  /** Sets display dimensions based on screen orientation and camera resolution. */
+  /**
+   * Determines portrait layout from display dimensions.
+   * Avoids reading display.orientation, which may access accelerometer data
+   * before the user has agreed to the privacy policy.
+   */
+  private isPortraitDisplay(displayClass: display.Display): boolean {
+    return displayClass.height >= displayClass.width;
+  }
+
+  /** Sets display dimensions based on screen layout and camera resolution. */
   private setDisplay(): void {
     try {
       const displayClass: display.Display | null = display.getDefaultDisplaySync();
       if (displayClass === null) {
         return;
       }
-      const orientation: number = displayClass.orientation.valueOf();
+      const isPortrait: boolean = this.isPortraitDisplay(displayClass);
       const hasResolution: boolean = !!this.cameraResolutionValues && this.cameraResolutionValues.length >= 2;
       if (hasResolution) {
-        this.applyResolutionBasedDimensions(displayClass, orientation);
+        this.applyResolutionBasedDimensions(displayClass, isPortrait);
       } else {
-        this.applyDefaultDimensions(displayClass, orientation);
+        this.applyDefaultDimensions(displayClass, isPortrait);
       }
     } catch (e) {
       Log.e(SCAN_TAG, `Failed to set display: ${e.message}`);
     }
   }
 
-  /** Applies resolution-based dimensions based on orientation. */
-  private applyResolutionBasedDimensions(displayClass: display.Display, orientation: number): void {
+  /** Applies resolution-based dimensions based on layout orientation. */
+  private applyResolutionBasedDimensions(displayClass: display.Display, isPortrait: boolean): void {
     if (!this.cameraResolutionValues || this.cameraResolutionValues.length < 2) {
-      this.applyDefaultDimensions(displayClass, orientation);
+      this.applyDefaultDimensions(displayClass, isPortrait);
       return;
     }
     const width: number = this.cameraResolutionValues[0];
     const height: number = this.cameraResolutionValues[1];
-    const isPortrait: boolean = orientation === 0 || orientation === 2;
 
     if (isPortrait) {
       const radio: number = height / width;
@@ -400,8 +408,7 @@ export class ScanHandler {
   }
 
   /** Applies default square dimensions when no resolution is specified. */
-  private applyDefaultDimensions(displayClass: display.Display, orientation: number): void {
-    const isPortrait: boolean = orientation === 0 || orientation === 2;
+  private applyDefaultDimensions(displayClass: display.Display, isPortrait: boolean): void {
     if (isPortrait) {
       this.scanWidth = this.ensureDoublePrecision(px2vp(displayClass.width));
       this.scanHeight = this.scanWidth;

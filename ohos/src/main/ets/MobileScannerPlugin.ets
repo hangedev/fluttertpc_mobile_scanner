@@ -113,18 +113,28 @@ export class MobileScannerPlugin implements FlutterPlugin, MethodCallHandler, Ab
           this.scanHandler?.clearEventSink();
         }
       });
-      if (!this.binding) {
-        Log.e(TAG, 'binding is null in onAttachedToEngine');
-        return;
-      }
-      const textureRegistry: TextureRegistry = this.binding.getTextureRegistry();
-      this.textureId = textureRegistry.getTextureId();
-      const surfaceTextureEntry: SurfaceTextureEntry = textureRegistry.registerTexture(this.textureId);
-      this.surfaceId = surfaceTextureEntry.getSurfaceId().toString();
-      Log.i(TAG, `surfaceId: ${this.surfaceId}`);
     } catch (e) {
       Log.e(TAG, `Failed to attach to engine: ${e.message}`);
     }
+  }
+
+  /**
+   * Registers the camera preview texture lazily when scanning starts.
+   * Defers creation until after the user initiates the scanner,
+   * avoiding early hardware-related initialization before privacy consent.
+   */
+  private ensureTextureRegistered(): void {
+    if (this.textureId !== null && this.surfaceId !== null) {
+      return;
+    }
+    if (!this.binding) {
+      throw new Error('Flutter binding is null');
+    }
+    const textureRegistry: TextureRegistry = this.binding.getTextureRegistry();
+    this.textureId = textureRegistry.getTextureId();
+    const surfaceTextureEntry: SurfaceTextureEntry = textureRegistry.registerTexture(this.textureId);
+    this.surfaceId = surfaceTextureEntry.getSurfaceId().toString();
+    Log.i(TAG, `surfaceId: ${this.surfaceId}`);
   }
 
   onDetachedFromEngine(binding: FlutterPluginBinding): void {
@@ -265,6 +275,7 @@ export class MobileScannerPlugin implements FlutterPlugin, MethodCallHandler, Ab
   }
 
   private startScanHandler(params: StartParams, result: MethodResult): void {
+    this.ensureTextureRegistered();
     if (!this.scanHandler) {
       this.scanHandler = new ScanHandler();
     }
