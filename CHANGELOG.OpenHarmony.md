@@ -1,8 +1,9 @@
 # Changelog - OpenHarmony
 
-## 6.0.10-ohos-1.0.0-beta.2
+## 6.0.10-ohos-1.0.0 - 2026.8
 
 ### Bug Fixes
+- Fixed privacy compliance issue where the plugin accessed sensor data before user consent to the privacy policy.
 - Fixed `onDetachedFromAbility` not cleaning up `scanResultCallback` and `frameResultCallback` references — now sets them to null to prevent closure leaks
 - Fixed `processFrame()` not awaited in `onFrameResult_` — now properly awaits the async method to ensure image buffer is ready before scan result callback
 - Fixed `setDisplay()` error swallowed — now throws error to propagate display configuration failure to caller

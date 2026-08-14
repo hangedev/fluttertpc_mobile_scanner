@@ -459,8 +459,38 @@ export class MobileScannerPlugin implements FlutterPlugin, MethodCallHandler, Ab
   }
 
   /**
+   * Registers the camera preview texture lazily when scanning starts.
+   * Avoids native initialization during engine attach before user consent.
+   * @returns true when the texture is available, false on failure (logged, no throw).
+   */
+  private _registerTexture(): boolean {
+    if (this._textureId !== null) {
+      Log.d(TAG, 'Texture already registered, textureId: ' + this._textureId);
+      return true;
+    }
+    if (this._binding === null) {
+      Log.e(TAG, 'Failed to register texture: binding is null');
+      return false;
+    }
+    try {
+      const registry = this._binding.getTextureRegistry();
+      this._textureId = registry.getTextureId();
+      const entry = registry.registerTexture(this._textureId);
+      this._surfaceId = entry.getSurfaceId().toString();
+      Log.i(TAG, 'surfaceId: ' + this._surfaceId);
+      return true;
+    } catch (err) {
+      Log.e(TAG, 'Failed to register texture: ' + safeString(err));
+      this._textureId = null;
+      this._surfaceId = null;
+      return false;
+    }
+  }
+
+  /**
    * Called when the plugin is attached to the Flutter engine.
-   * Initializes method channel, event channel, and texture.
+   * Initializes method channel and event channel only.
+   * Texture registration is deferred until start() is called.
    * @param binding - The Flutter plugin binding
    */
   onAttachedToEngine(binding: FlutterPluginBinding): void {
@@ -485,20 +515,6 @@ export class MobileScannerPlugin implements FlutterPlugin, MethodCallHandler, Ab
         this._eventSink = null;
       },
     });
-
-    if (this._binding === null) {
-      Log.e(TAG, 'Failed to get texture registry: binding is null');
-      return;
-    }
-    try {
-      const registry = this._binding.getTextureRegistry();
-      this._textureId = registry.getTextureId();
-      const entry = registry.registerTexture(this._textureId);
-      this._surfaceId = entry.getSurfaceId().toString();
-      Log.i(TAG, 'surfaceId: ' + this._surfaceId);
-    } catch (err) {
-      Log.e(TAG, 'Failed to register texture: ' + safeString(err));
-    }
   }
 
   /**
@@ -669,6 +685,10 @@ export class MobileScannerPlugin implements FlutterPlugin, MethodCallHandler, Ab
 
     try {
       this._parseStartOptions(call);
+      const textureRegistered: boolean = this._registerTexture();
+      if (!textureRegistered) {
+        Log.w(TAG, 'Texture registration failed, camera preview will be unavailable');
+      }
       this.startCamera();
       this._isStart = true;
       result.success(this._buildStartResult());
@@ -706,6 +726,7 @@ export class MobileScannerPlugin implements FlutterPlugin, MethodCallHandler, Ab
 
   /**
    * Builds the start result object for the Flutter layer.
+   * textureId may be null when texture registration failed; Dart side renders an empty preview.
    * @returns The result map with texture and camera info
    */
   private _buildStartResult(): StartResult {
@@ -930,7 +951,7 @@ export class MobileScannerPlugin implements FlutterPlugin, MethodCallHandler, Ab
   startScan(): void {
     if (this._surfaceId === null) {
       Log.e(TAG, 'Failed to start scan: surfaceId is null');
-      throw new Error('surfaceId is null, cannot start scan');
+      throw new Error('Camera preview is unavailable');
     }
     try {
       const vc: customScan.ViewControl = {
@@ -952,7 +973,9 @@ export class MobileScannerPlugin implements FlutterPlugin, MethodCallHandler, Ab
   }
 
   /**
-   * Sets the display size based on screen orientation and resolution.
+   * Sets the display size based on screen dimensions and resolution.
+   * Uses width/height comparison instead of display orientation API
+   * to avoid accessing sensor-related orientation data.
    */
   private _setDisplay(): void {
     try {
@@ -961,8 +984,7 @@ export class MobileScannerPlugin implements FlutterPlugin, MethodCallHandler, Ab
         return;
       }
 
-      const orient: number = dc.orientation.valueOf();
-      const portrait: boolean = (orient === 0 || orient === 2);
+      const portrait: boolean = dc.width < dc.height;
 
       if (this._cameraResValues !== null && this._cameraResValues.length >= 2) {
         const rw: number = this._cameraResValues[0];

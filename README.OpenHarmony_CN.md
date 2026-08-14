@@ -6,21 +6,6 @@
 
 本项目基于 [mobile_scanner](https://pub.dev/packages/mobile_scanner) 开发。
 
-## 目录
-
-- [简介](#简介)
-- [下载安装](#下载安装)
-- [使用示例](#使用示例)
-- [约束与限制](#约束与限制)
-- [使用说明](#使用说明)
-- [接口说明](#接口说明)
-- [新增特性](#新增特性)
-- [遗留问题](#遗留问题)
-- [常见问题](#常见问题)
-- [目录结构](#目录结构)
-- [贡献代码](#贡献代码)
-- [开源协议](#开源协议)
-
 ## 简介
 
 mobile_scanner 是一款通用条码/二维码扫描 Flutter 插件。在 OpenHarmony 上通过华为 ScanKit 实现条码检测，支持实时相机预览扫描、图片条码分析、闪光灯控制、变焦控制等功能。
@@ -36,7 +21,8 @@ dependencies:
   mobile_scanner:
     git:
       url: https://gitcode.com/CPF-Flutter/fluttertpc_mobile_scanner.git
-      ref: 6.0.10-ohos-1.0.0-beta.2
+      # ref: 根据下方表格选择不同框架适配的TAG版本
+      ref: TAG  # 根据下方表格选择不同框架适配的TAG版本
 ```
 
 执行命令：
@@ -47,11 +33,9 @@ flutter pub get
 
 ### TAG 版本对应表
 
-| Flutter (OHOS) | TAG |
-|----------------|-----|
-| 3.7.12-ohos-1.0.6 | 6.0.10-ohos-1.0.0-beta.2 |
-| 3.22.1-ohos-1.0.1 | 6.0.10-ohos-1.0.0-beta.2 |
-| 3.27.4-ohos-1.0.0 | 6.0.10-ohos-1.0.0-beta.2 |
+| Flutter 框架版本 | TAG 名称 | 分支名 |
+|---|---|---|
+| 3.27 | 6.0.10-ohos-1.0.0 | br_v6.0.10_ohos |
 
 ## 使用示例
 

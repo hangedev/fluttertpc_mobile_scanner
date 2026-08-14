@@ -6,21 +6,6 @@
 
 This project is based on [mobile_scanner](https://pub.dev/packages/mobile_scanner).
 
-## Table of Contents
-
-- [Introduction](#introduction)
-- [Installation](#installation)
-- [Usage](#usage)
-- [Constraints](#constraints)
-- [Usage Notes](#usage-notes)
-- [API Reference](#api-reference)
-- [New Features](#new-features)
-- [Known Issues](#known-issues)
-- [FAQ](#faq)
-- [Directory Structure](#directory-structure)
-- [Contributing](#contributing)
-- [License](#license)
-
 ## Introduction
 
 mobile_scanner is a universal barcode and QR code scanner for Flutter. On OpenHarmony, it leverages ScanKit for barcode detection, supporting real-time camera preview scanning, local image barcode analysis, torch control, and zoom control.
@@ -36,7 +21,8 @@ dependencies:
   mobile_scanner:
     git:
       url: https://gitcode.com/CPF-Flutter/fluttertpc_mobile_scanner.git
-      ref: 6.0.10-ohos-1.0.0-beta.2
+      # ref: Select the TAG version that matches your Flutter framework version from the table below
+      ref: TAG  # Select a TAG from the TAG version mapping table below
 ```
 
 Run:
@@ -47,10 +33,9 @@ flutter pub get
 
 ### TAG Version Mapping
 
-| Flutter (OHOS) | TAG |
-|----------------|-----|
-| 3.22.1-ohos-1.0.1 | 6.0.10-ohos-1.0.0-beta.2 |
-| 3.27.4-ohos-1.0.0 | 6.0.10-ohos-1.0.0-beta.2 |
+| Flutter Framework Version | TAG Name | Branch |
+| --- | --- | --- |
+| 3.27 | 6.0.10-ohos-1.0.0 | br_v6.0.10_ohos |
 
 ## Usage
 
