@@ -3,6 +3,7 @@
 ## 7.1.4-ohos-1.0.1
 
 ### Fixes
+- Fixed privacy compliance issues in the plugin.
 - Fixed Advanced Mobile Scanner scan freeze after returning from background (>2s) on OpenHarmony by adding native ability lifecycle handling in MobileScannerPlugin.
 - Fixed `start` return value missing `cameraDirection`/`naturalDeviceOrientation`/`handlesCropAndRotation`/`sensorOrientation` fields
 - Fixed `hasFlashUnit` stub that always returned `true` — now properly detects flash hardware

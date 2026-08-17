@@ -29,13 +29,12 @@ import { cameraPermission, checkPermissions, requestPermissions } from './Camera
 import { customScan, scanBarcode, scanCore, detectBarcode } from '@kit.ScanKit';
 import EventChannel, { EventSink, StreamHandler } from '@ohos/flutter_ohos/src/main/ets/plugin/common/EventChannel';
 import { Barcode, BarcodeFormat, BarcodeType } from './Barcode';
-import { AsyncCallback, BusinessError, Callback } from '@kit.BasicServicesKit';
+import { AsyncCallback, BusinessError } from '@kit.BasicServicesKit';
 import { display, window } from '@kit.ArkUI';
 import { Point } from '@ohos.UiTest';
 import { image } from '@kit.ImageKit';
 import { camera } from '@kit.CameraKit';
 import { effectKit } from '@kit.ArkGraphics2D';
-import sensor from '@ohos.sensor';
 
 const TAG: string = 'MobileScannerPlugin';
 
@@ -51,14 +50,6 @@ enum NativeOrientation {
   landscapeRight = 'LANDSCAPE_RIGHT',
 }
 
-enum Angle {
-  ZERO = 0,
-  PLUS_45 = 45,
-  MINUS_45 = -45,
-  PLUS_135 = 135,
-  MINUS_135 = -135,
-}
-
 // 定义接口（推荐）
 interface Size {
   width: number;
@@ -68,71 +59,76 @@ interface Size {
 class DeviceOrientationListener implements StreamHandler {
   private eventSink: EventSink | null = null;
   private lastOrientation: NativeOrientation = NativeOrientation.portraitUp;
-  private orientationCallback: Callback<sensor.OrientationResponse> | null = null;
-  private X: number = 0;
-  private Y: number = 0;
-  
-  constructor() {
+  private displayChangeCallback: ((displayId: number) => void) | null = null;
+  private isMonitoring: boolean = false;
+
+  private mapDisplayOrientation(orientation: number): NativeOrientation {
+    switch (orientation) {
+      case 0:
+        return NativeOrientation.portraitUp;
+      case 2:
+        return NativeOrientation.portraitDown;
+      case 1:
+        return NativeOrientation.landscapeRight;
+      case 3:
+        return NativeOrientation.landscapeLeft;
+      default:
+        return NativeOrientation.portraitUp;
+    }
   }
-  
+
+  getCurrentOrientation(): NativeOrientation {
+    try {
+      const displayClass = display.getDefaultDisplaySync();
+      return this.mapDisplayOrientation(displayClass.orientation);
+    } catch (error) {
+      Log.e(TAG, 'Failed to read display orientation: ' + JSON.stringify(error));
+      return this.lastOrientation;
+    }
+  }
+
+  private sendCurrentDisplayOrientation(force: boolean = false): void {
+    const newOrientation = this.getCurrentOrientation();
+    if (force || newOrientation != this.lastOrientation) {
+      this.lastOrientation = newOrientation;
+      this.eventSink?.success(newOrientation);
+    }
+  }
+
   onListen(args: Object, eventSink: EventSink): void {
     this.eventSink = eventSink;
-    this.start();
+    // Do not access sensors here. Monitoring starts with the camera after consent.
   }
-  
+
   onCancel(args: Object): void {
     this.eventSink = null;
     this.stop();
   }
 
-  calculateSensorOrientation(data: sensor.OrientationResponse): NativeOrientation {
-    if (!data) {
-      return NativeOrientation.portraitUp;
-    }
-    this.X = data.beta;
-    this.Y = data.gamma;
-    if ((this.X > Angle.MINUS_135 && this.X < Angle.ZERO) || (this.X >= Angle.ZERO && this.X < Angle.PLUS_45)) {
-      if (this.Y <= Angle.PLUS_45 && this.Y >= Angle.MINUS_45) {
-        return NativeOrientation.portraitUp;
-      }
-      if ((this.Y > Angle.MINUS_135 && this.Y < Angle.ZERO)) {
-        return NativeOrientation.landscapeRight;
-      } else {
-        return NativeOrientation.landscapeLeft;
-      }
-    } else {
-      if (this.Y <= Angle.PLUS_45 && this.Y >= Angle.MINUS_45) {
-        return NativeOrientation.portraitDown;
-      }
-      if ((this.Y > Angle.MINUS_135 && this.Y < Angle.ZERO)) {
-        return NativeOrientation.landscapeRight;
-      } else {
-        return NativeOrientation.landscapeLeft;
-      }
-    }
-  }
-  
   start(): void {
-    // 监听显示方向变化
-    this.orientationCallback = (data: sensor.OrientationResponse) => {
-      let newOrientation: NativeOrientation = this.calculateSensorOrientation(data);
-      if (newOrientation != this.lastOrientation) {
-        this.lastOrientation = newOrientation;
-        this.eventSink?.success(newOrientation);
-      }
+    if (this.isMonitoring) {
+      return;
     }
-    sensor.on(sensor.SensorId.ORIENTATION, this.orientationCallback);
+    this.isMonitoring = true;
+    this.sendCurrentDisplayOrientation(true);
+    this.displayChangeCallback = (_displayId: number) => {
+      this.sendCurrentDisplayOrientation();
+    };
+    display.on('change', this.displayChangeCallback);
   }
 
   stop(): void {
-    // 移除显示方向变化监听
-    if (this.orientationCallback) {
+    if (!this.isMonitoring) {
+      return;
+    }
+    this.isMonitoring = false;
+    if (this.displayChangeCallback) {
       try {
-        sensor.off(sensor.SensorId.ORIENTATION, this.orientationCallback);
-        this.orientationCallback = null;
+        display.off('change', this.displayChangeCallback);
       } catch (error) {
-        Log.e(TAG, 'Failed to unregister callback. Code: ' + JSON.stringify(error));
+        Log.e(TAG, 'Failed to unregister display callback: ' + JSON.stringify(error));
       }
+      this.displayChangeCallback = null;
     }
   }
 }
@@ -380,6 +376,7 @@ export class MobileScannerPlugin implements FlutterPlugin, MethodCallHandler, Ab
     this.isCustomScanActive = false;
     this.isStart = false;
     this.imageBuffer = null;
+    this.deviceOrientationListener?.stop();
   }
 
   onDetachedFromEngine(binding: FlutterPluginBinding): void {
@@ -633,6 +630,8 @@ export class MobileScannerPlugin implements FlutterPlugin, MethodCallHandler, Ab
       return;
     }
     // dart 中接收的 width 和 height 会转换为 double 类型，返回整数会导致异常
+    const initialOrientation = this.deviceOrientationListener?.getCurrentOrientation() ??
+      NativeOrientation.portraitUp;
     result.success({
       'textureId': this.textureId,
       'size': {
@@ -642,7 +641,7 @@ export class MobileScannerPlugin implements FlutterPlugin, MethodCallHandler, Ab
       'numberOfCameras': 1,
       'currentTorchState': customScan.getFlashLightStatus() ? TorchState.on : TorchState.off,
       'cameraDirection': this.facing,
-      'naturalDeviceOrientation': NativeOrientation.portraitUp,
+      'naturalDeviceOrientation': initialOrientation,
       'sensorOrientation': 90,
       'handlesCropAndRotation': false
     });
@@ -686,7 +685,9 @@ export class MobileScannerPlugin implements FlutterPlugin, MethodCallHandler, Ab
       Log.e(TAG, `Failed to set display: ${JSON.stringify(e)}`);
       return false;
     }
+    this.deviceOrientationListener?.start();
     if (!this.startScan()) {
+      this.deviceOrientationListener?.stop();
       return false;
     }
     try {
@@ -844,6 +845,7 @@ export class MobileScannerPlugin implements FlutterPlugin, MethodCallHandler, Ab
       this.isPaused = true;
       this.isStart = false;
       this.wasScanningBeforeBackground = false;
+      this.deviceOrientationListener?.stop();
     }
 
     result?.success(null)
@@ -877,6 +879,7 @@ export class MobileScannerPlugin implements FlutterPlugin, MethodCallHandler, Ab
         }
         this.isCustomScanActive = false;
       }
+      this.deviceOrientationListener?.stop();
     }
     result?.success(null)
   }
