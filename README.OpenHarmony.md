@@ -32,15 +32,15 @@ flutter pub get
 | Flutter framework version | TAG name | Branch |
 |---|---|---|
 | 3.7 | 3.5.6-ohos-1.0.0-beta.1 | master |
-| 3.22 | 6.0.2-ohos-1.0.0-beta.2 | br_v6.0.2_ohos |
-| 3.27 | 6.0.10-ohos-1.0.0-beta.1 | br_v6.0.10_ohos |
-| 3.35 | 7.1.4-ohos-1.0.0-beta.1 | br_v7.1.4_ohos |
+| 3.22 | 6.0.2-ohos-1.0.0 | br_v6.0.2_ohos |
+| 3.27 | 6.0.10-ohos-1.0.0 | br_v6.0.10_ohos |
+| 3.35 | 7.1.4-ohos-1.0.0 | br_v7.1.4_ohos |
 
 Tested on the following versions:
 
 | Library Version | Flutter (OHOS) | SDK | DevEco Studio | ROM |
 |-----------------|----------------|-----|---------------|-----|
-| 6.0.2 | 3.22.1-ohos-1.0.1 | 5.0.0(12) | 5.0.13.200 | 5.1.0.120 SP3 |
+| 6.0.2 | 3.22.1-ohos-1.0.1 | 5.0.0(17) | 6.1.1.290 | 6.1.0.135.SP8 |
 
 ### 1.3 Complete Usage Flow
 

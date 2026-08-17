@@ -1,8 +1,11 @@
 # mobile_scanner OpenHarmony Changelog
 
-## 6.0.2-ohos-1.0.0-beta.2
+## 6.0.2-ohos-1.0.0
 
 ### Bugs Fixed
+- Fixed privacy compliance issue where the plugin accessed sensor data before user consent to the privacy policy:
+  - Removed `display.orientation` usage in `ScanHandler.setDisplay()` — reading screen orientation on ohos may trigger accelerometer access; replaced with portrait detection via display width/height comparison (`height >= width`).
+  - Deferred camera preview texture (`registerTexture`) registration from `onAttachedToEngine` to `start()` — plugin attach no longer initializes camera-related hardware resources at app launch before privacy consent.
 - Fixed callback event loss when `returnImage=true` and `image` is null — barcode events are now always sent regardless of image availability.
 - Fixed `analyzeImage` `formats` parameter being ignored (always used `ScanType.ALL`); now correctly converts and applies the specified barcode formats.
 - Fixed `analyzeImage` duplicate event sending — results are now returned exclusively via MethodChannel, eliminating duplicate barcode data on the Dart side.
@@ -15,7 +18,6 @@
 - Fixed `callback` rescan timer using hardcoded timeout values; now uses the `timeout` parameter passed from Dart.
 - Fixed `setScale` unsafe type assertion (`call.args as number`); now uses `call.argument("zoom")` with a safe default.
 - Fixed `CameraPermissions.checkAccessToken` returning potentially incorrect grant status when `tokenId` is 0 (bundle info fetch failure); now returns `PERMISSION_DENIED` early.
-
 ### Improvements
 - **Resource lifecycle**: Added proper resource cleanup in `onDetachedFromEngine` — 7-step release flow (timers → scan → channels → state → texture → callbacks → context).
 - **Exception handling**: Added try-catch for all async method paths (`start()`, `stop()`, `startCamera()`, `retryCamera()`).
