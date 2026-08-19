@@ -15,6 +15,7 @@
 - Fixed `setFocus` missing parameter range validation
 - Fixed async scan errors not propagated to Flutter layer (`errorCallback` not invoked)
 - Fixed `Timer` not cancelled in `onDetachedFromEngine`
+- Fixed camera preview rotating with physical device orientation while the Flutter UI remained locked to portrait (`SystemChrome.setPreferredOrientations`). Native `DeviceOrientationListener` now reports UI window orientation via `window.getWindowProperties().windowRect` and listens to `windowSizeChange` instead of physical `display.on('change')`; preview dimensions in `setDisplay()` follow UI layout orientation as well.
 
 ### Optimizations
 - Removed `ESObject` misuse, replaced with concrete type definitions

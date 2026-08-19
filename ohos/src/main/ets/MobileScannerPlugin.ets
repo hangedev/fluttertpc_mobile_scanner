@@ -57,42 +57,106 @@ interface Size {
 }
 
 class DeviceOrientationListener implements StreamHandler {
+  // Reports UI window orientation (windowRect), not physical display orientation.
+  // Portrait layouts always map to PORTRAIT_UP; PORTRAIT_DOWN is not emitted on OHOS.
   private eventSink: EventSink | null = null;
   private lastOrientation: NativeOrientation = NativeOrientation.portraitUp;
+  private windowSizeChangeCallback: ((size: window.Size) => void) | null = null;
   private displayChangeCallback: ((displayId: number) => void) | null = null;
+  private subscribedWindow: window.Window | null = null;
   private isMonitoring: boolean = false;
+  private mainWindowProvider: (() => window.Window | null) | null = null;
 
-  private mapDisplayOrientation(orientation: number): NativeOrientation {
-    switch (orientation) {
-      case 0:
-        return NativeOrientation.portraitUp;
-      case 2:
-        return NativeOrientation.portraitDown;
-      case 1:
+  setMainWindowProvider(provider: (() => window.Window | null) | null): void {
+    this.mainWindowProvider = provider;
+  }
+
+  private resolveMainWindow(): window.Window | null {
+    if (this.mainWindowProvider === null) {
+      return null;
+    }
+    return this.mainWindowProvider();
+  }
+
+  private resolveOrientationFromWindowRect(rect: window.Rect): NativeOrientation {
+    if (rect.height > rect.width) {
+      return NativeOrientation.portraitUp;
+    }
+    if (rect.width > rect.height) {
+      return this.mapLandscapeOrientation();
+    }
+    return this.lastOrientation;
+  }
+
+  private mapLandscapeOrientation(): NativeOrientation {
+    try {
+      const displayClass = display.getDefaultDisplaySync();
+      if (displayClass.orientation === 1) {
         return NativeOrientation.landscapeRight;
-      case 3:
+      }
+      if (displayClass.orientation === 3) {
         return NativeOrientation.landscapeLeft;
-      default:
-        return NativeOrientation.portraitUp;
+      }
+      Log.i(TAG, 'Landscape UI with non-landscape physical display, defaulting to landscapeRight');
+      return NativeOrientation.landscapeRight;
+    } catch (error) {
+      Log.e(TAG, 'Failed to read display orientation: ' + JSON.stringify(error));
+      return NativeOrientation.landscapeRight;
     }
   }
 
   getCurrentOrientation(): NativeOrientation {
+    const mainWindow = this.resolveMainWindow();
+    if (mainWindow === null) {
+      return this.lastOrientation;
+    }
     try {
-      const displayClass = display.getDefaultDisplaySync();
-      return this.mapDisplayOrientation(displayClass.orientation);
+      const rect = mainWindow.getWindowProperties().windowRect;
+      return this.resolveOrientationFromWindowRect(rect);
     } catch (error) {
-      Log.e(TAG, 'Failed to read display orientation: ' + JSON.stringify(error));
+      Log.e(TAG, 'Failed to read window orientation: ' + JSON.stringify(error));
       return this.lastOrientation;
     }
   }
 
-  private sendCurrentDisplayOrientation(force: boolean = false): void {
+  private sendCurrentWindowOrientation(force: boolean = false): void {
     const newOrientation = this.getCurrentOrientation();
     if (force || newOrientation != this.lastOrientation) {
       this.lastOrientation = newOrientation;
       this.eventSink?.success(newOrientation);
     }
+  }
+
+  private subscribeWindowListener(mainWindow: window.Window): void {
+    if (this.subscribedWindow === mainWindow) {
+      return;
+    }
+    if (this.subscribedWindow !== null && this.windowSizeChangeCallback !== null) {
+      try {
+        this.subscribedWindow.off('windowSizeChange', this.windowSizeChangeCallback);
+      } catch (error) {
+        Log.e(TAG, 'Failed to unregister previous window callback: ' + JSON.stringify(error));
+      }
+    }
+    if (this.windowSizeChangeCallback === null) {
+      this.windowSizeChangeCallback = (_size: window.Size) => {
+        this.sendCurrentWindowOrientation();
+      };
+    }
+    this.subscribedWindow = mainWindow;
+    mainWindow.on('windowSizeChange', this.windowSizeChangeCallback);
+  }
+
+  private trySubscribeWindowListener(): void {
+    const mainWindow = this.resolveMainWindow();
+    if (mainWindow === null) {
+      return;
+    }
+    if (this.subscribedWindow === mainWindow) {
+      return;
+    }
+    this.subscribeWindowListener(mainWindow);
+    Log.i(TAG, 'Subscribed to windowSizeChange after main window became available');
   }
 
   onListen(args: Object, eventSink: EventSink): void {
@@ -110,10 +174,19 @@ class DeviceOrientationListener implements StreamHandler {
       return;
     }
     this.isMonitoring = true;
-    this.sendCurrentDisplayOrientation(true);
-    this.displayChangeCallback = (_displayId: number) => {
-      this.sendCurrentDisplayOrientation();
-    };
+    const mainWindow = this.resolveMainWindow();
+    if (mainWindow !== null) {
+      this.subscribeWindowListener(mainWindow);
+    } else {
+      Log.i(TAG, 'Main window unavailable at orientation listener start, using display change fallback');
+    }
+    this.sendCurrentWindowOrientation(true);
+    if (this.displayChangeCallback === null) {
+      this.displayChangeCallback = (_displayId: number) => {
+        this.trySubscribeWindowListener();
+        this.sendCurrentWindowOrientation();
+      };
+    }
     display.on('change', this.displayChangeCallback);
   }
 
@@ -122,14 +195,23 @@ class DeviceOrientationListener implements StreamHandler {
       return;
     }
     this.isMonitoring = false;
-    if (this.displayChangeCallback) {
+    if (this.subscribedWindow !== null && this.windowSizeChangeCallback !== null) {
+      try {
+        this.subscribedWindow.off('windowSizeChange', this.windowSizeChangeCallback);
+      } catch (error) {
+        Log.e(TAG, 'Failed to unregister window callback: ' + JSON.stringify(error));
+      }
+    }
+    if (this.displayChangeCallback !== null) {
       try {
         display.off('change', this.displayChangeCallback);
       } catch (error) {
         Log.e(TAG, 'Failed to unregister display callback: ' + JSON.stringify(error));
       }
-      this.displayChangeCallback = null;
     }
+    this.subscribedWindow = null;
+    this.windowSizeChangeCallback = null;
+    this.displayChangeCallback = null;
   }
 }
 
@@ -170,11 +252,17 @@ class MobileScannerAbilityLifecycleCallback {
 
   onAbilityContinue(_ability: UIAbility): void {}
 
-  onWindowStageCreate(_ability: UIAbility, _windowStage: window.WindowStage): void {}
+  onWindowStageCreate(_ability: UIAbility, windowStage: window.WindowStage): void {
+    this.plugin.setWindowStage(windowStage);
+  }
 
-  onWindowStageDestroy(_ability: UIAbility, _windowStage: window.WindowStage): void {}
+  onWindowStageDestroy(_ability: UIAbility, _windowStage: window.WindowStage): void {
+    this.plugin.handleWindowStageDestroy();
+  }
 
-  onWindowStageActive(_ability: UIAbility, _windowStage: window.WindowStage): void {}
+  onWindowStageActive(_ability: UIAbility, windowStage: window.WindowStage): void {
+    this.plugin.setWindowStage(windowStage);
+  }
 
   onWindowStageInactive(_ability: UIAbility, _windowStage: window.WindowStage): void {}
 
@@ -196,6 +284,7 @@ export class MobileScannerPlugin implements FlutterPlugin, MethodCallHandler, Ab
     Log.i(TAG, 'onDetachedFromAbility');
     this.unregisterAbilityLifecycleCallback();
     this.releaseScannerResources();
+    this.deviceOrientationListener?.setMainWindowProvider(null);
     this.ability = null;
   }
 
@@ -245,6 +334,81 @@ export class MobileScannerPlugin implements FlutterPlugin, MethodCallHandler, Ab
   private lifecycleTaskId: number = -1;
   private abilityLifecycleCallbackId: number = -1;
   private abilityLifecycleCallback: MobileScannerAbilityLifecycleCallback | null = null;
+  private windowStage: window.WindowStage | null = null;
+
+  setWindowStage(windowStage: window.WindowStage | null): void {
+    this.windowStage = windowStage;
+    if (windowStage !== null && this.isStart && !this.isPaused) {
+      this.deviceOrientationListener?.stop();
+      this.deviceOrientationListener?.start();
+    }
+  }
+
+  handleWindowStageDestroy(): void {
+    this.windowStage = null;
+    this.deviceOrientationListener?.stop();
+  }
+
+  private getMainWindow(): window.Window | null {
+    if (this.windowStage === null) {
+      return null;
+    }
+    try {
+      return this.windowStage.getMainWindowSync();
+    } catch (error) {
+      Log.e(TAG, 'Failed to get main window: ' + JSON.stringify(error));
+      return null;
+    }
+  }
+
+  private isPortraitUILayout(): boolean {
+    const mainWindow = this.getMainWindow();
+    if (mainWindow !== null) {
+      try {
+        const rect = mainWindow.getWindowProperties().windowRect;
+        if (rect.height > rect.width) {
+          return true;
+        }
+        if (rect.width > rect.height) {
+          return false;
+        }
+      } catch (error) {
+        Log.e(TAG, `Failed to read window rect: ${JSON.stringify(error)}`);
+      }
+    }
+    try {
+      const displayClass = display.getDefaultDisplaySync();
+      const orientation = displayClass.orientation.valueOf();
+      return orientation === 0 || orientation === 2;
+    } catch (error) {
+      Log.e(TAG, `Failed to read display orientation: ${JSON.stringify(error)}`);
+      return true;
+    }
+  }
+
+  private getUILayoutBaseWidth(displayClass: display.Display): number {
+    const mainWindow = this.getMainWindow();
+    if (mainWindow !== null) {
+      try {
+        return this.ensureDouble(mainWindow.getWindowProperties().windowRect.width);
+      } catch (error) {
+        Log.e(TAG, `Failed to read window width: ${JSON.stringify(error)}`);
+      }
+    }
+    return this.ensureDouble(px2vp(displayClass.width));
+  }
+
+  private getUILayoutBaseHeight(displayClass: display.Display): number {
+    const mainWindow = this.getMainWindow();
+    if (mainWindow !== null) {
+      try {
+        return this.ensureDouble(mainWindow.getWindowProperties().windowRect.height);
+      } catch (error) {
+        Log.e(TAG, `Failed to read window height: ${JSON.stringify(error)}`);
+      }
+    }
+    return this.ensureDouble(px2vp(displayClass.height));
+  }
 
   publishEvent(event: ESObject) {
     if (this.isDetached) {
@@ -265,6 +429,7 @@ export class MobileScannerPlugin implements FlutterPlugin, MethodCallHandler, Ab
     
     // Initialize device orientation channel
     this.deviceOrientationListener = new DeviceOrientationListener();
+    this.deviceOrientationListener.setMainWindowProvider(() => this.getMainWindow());
     this.deviceOrientationChannel = new EventChannel(binding.getBinaryMessenger(), 'dev.steenbakker.mobile_scanner/scanner/deviceOrientation');
     this.deviceOrientationChannel.setStreamHandler(this.deviceOrientationListener);
     
@@ -396,9 +561,11 @@ export class MobileScannerPlugin implements FlutterPlugin, MethodCallHandler, Ab
 
     this.deviceOrientationChannel?.setStreamHandler(null);
     this.deviceOrientationListener?.stop();
+    this.deviceOrientationListener?.setMainWindowProvider(null);
     this.deviceOrientationChannel = null;
     this.deviceOrientationListener = null;
 
+    this.windowStage = null;
     this.scanWindow = null;
     this.imageBuffer = null;
     this.applicationContext = null;
@@ -436,6 +603,7 @@ export class MobileScannerPlugin implements FlutterPlugin, MethodCallHandler, Ab
     this.isPaused = false;
     this.wasScanningBeforeBackground = false;
     this.imageBuffer = null;
+    this.deviceOrientationListener?.stop();
     this.clearCallbacks();
   }
 
@@ -780,13 +948,13 @@ export class MobileScannerPlugin implements FlutterPlugin, MethodCallHandler, Ab
       return;
     }
     if (displayClass !== null) {
-      let orientation = displayClass.orientation.valueOf()
+      const isPortrait = this.isPortraitUILayout();
       if (!!this.cameraResolutionValues && this.cameraResolutionValues.length >= 2) {
         let width = this.cameraResolutionValues[0];
         let height = this.cameraResolutionValues[1];
-        if (orientation === 0 || orientation === 2) {
+        if (isPortrait) {
           let radio = height / width;
-          this.scanWidth = this.ensureDouble(px2vp(displayClass.width));
+          this.scanWidth = this.getUILayoutBaseWidth(displayClass);
           if (radio <= this.resolutionRatio[2]) {
             this.scanHeight = this.scanWidth;
           }else if (radio <= this.resolutionRatio[1]) {
@@ -796,7 +964,7 @@ export class MobileScannerPlugin implements FlutterPlugin, MethodCallHandler, Ab
           }
         }else {
           let radio = width / height;
-          this.scanHeight = this.ensureDouble(px2vp(displayClass.height));
+          this.scanHeight = this.getUILayoutBaseHeight(displayClass);
           if (radio <= this.resolutionRatio[2]) {
             this.scanWidth = this.scanHeight;
           }else if (radio <= this.resolutionRatio[1]) {
@@ -806,11 +974,11 @@ export class MobileScannerPlugin implements FlutterPlugin, MethodCallHandler, Ab
           }
         }
       }else {
-        if (orientation === 0 || orientation === 2) {
-          this.scanWidth = this.ensureDouble(px2vp(displayClass.width));
+        if (isPortrait) {
+          this.scanWidth = this.getUILayoutBaseWidth(displayClass);
           this.scanHeight = this.scanWidth;
         }else {
-          this.scanHeight = this.ensureDouble(px2vp(displayClass.height));
+          this.scanHeight = this.getUILayoutBaseHeight(displayClass);
           this.scanWidth = this.scanHeight;
         }
       }
