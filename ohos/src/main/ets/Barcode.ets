@@ -77,6 +77,29 @@ export enum BarcodeType {
 }
 
 /**
+ * Plain barcode map sent to Flutter via MethodChannel/EventChannel.
+ * Matches the structure expected by Barcode.fromNative() on the Dart side.
+ */
+export interface BarcodeMap {
+  calendarEvent: null;
+  contactInfo: null;
+  corners: CornerPoint[] | null;
+  displayValue: string;
+  driverLicense: null;
+  email: null;
+  format: BarcodeFormat;
+  geoPoint: null;
+  phone: null;
+  rawBytes: null;
+  rawValue: string;
+  size: ScanSize | null;
+  sms: null;
+  type: BarcodeType;
+  url: null;
+  wifi: null;
+}
+
+/**
  * Represents a decoded barcode result from ScanKit.
  * Contains the raw and display values, format type, corner points, and size.
  * Note: Structured content fields (calendarEvent, contactInfo, etc.) and rawBytes
@@ -87,7 +110,7 @@ export class Barcode {
   rawValue: string = '';
   format: BarcodeFormat = BarcodeFormat.unknown;
   type: BarcodeType = BarcodeType.unknown;
-  corners: Array<CornerPoint> = [];
+  corners: CornerPoint[] = [];
   size: ScanSize | null = null;
 
   /**
@@ -187,5 +210,60 @@ export class Barcode {
       return scanCore.ScanType.ALL;
     }
     return scanCore.ScanType.FORMAT_UNKNOWN;
+  }
+
+  /**
+   * Converts this barcode to a plain map for Flutter MethodChannel/EventChannel.
+   * Matches the Android/iOS barcode map structure expected by Barcode.fromNative().
+   */
+  toMap(): BarcodeMap {
+    const cornerMaps: CornerPoint[] = [];
+    for (let i: number = 0; i < this.corners.length; i++) {
+      const point: CornerPoint = {
+        x: this.corners[i].x,
+        y: this.corners[i].y,
+      };
+      cornerMaps.push(point);
+    }
+
+    let sizeMap: ScanSize | null = null;
+    if (this.size !== null && this.size !== undefined) {
+      const size: ScanSize = {
+        width: this.size.width,
+        height: this.size.height,
+      };
+      sizeMap = size;
+    }
+
+    const map: BarcodeMap = {
+      calendarEvent: null,
+      contactInfo: null,
+      corners: cornerMaps.length > 0 ? cornerMaps : null,
+      displayValue: this.displayValue,
+      driverLicense: null,
+      email: null,
+      format: this.format,
+      geoPoint: null,
+      phone: null,
+      rawBytes: null,
+      rawValue: this.rawValue,
+      size: sizeMap,
+      sms: null,
+      type: this.type,
+      url: null,
+      wifi: null,
+    };
+    return map;
+  }
+
+  /**
+   * Converts a list of barcodes to plain maps for Flutter channel communication.
+   */
+  static toMapList(barcodes: Barcode[]): BarcodeMap[] {
+    const result: BarcodeMap[] = [];
+    for (let i: number = 0; i < barcodes.length; i++) {
+      result.push(barcodes[i].toMap());
+    }
+    return result;
   }
 }

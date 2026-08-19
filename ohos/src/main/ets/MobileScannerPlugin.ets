@@ -46,7 +46,7 @@ import {
   checkPermissions,
   requestPermissions,
 } from './CameraPermissions';
-import { Barcode, BarcodeFormat, BarcodeType, ScanSize, CornerPoint } from './Barcode';
+import { Barcode, BarcodeFormat, BarcodeType, ScanSize, CornerPoint, BarcodeMap } from './Barcode';
 import { hasFlashUnit } from './CameraUtil';
 
 const TAG: string = 'MobileScannerPlugin';
@@ -335,6 +335,64 @@ function makePoint(x: number, y: number): CornerPoint {
   return { x: x, y: y };
 }
 
+/**
+ * Computes the bounding box size from corner points.
+ * Note: width/height may be integers when derived from corner deltas;
+ * callers must apply toDouble() before sending to Dart.
+ */
+function sizeFromCorners(corners: CornerPoint[]): ScanSize {
+  if (corners.length === 0) {
+    return { width: 0, height: 0 };
+  }
+  let minX: number = corners[0].x;
+  let maxX: number = corners[0].x;
+  let minY: number = corners[0].y;
+  let maxY: number = corners[0].y;
+  for (let i: number = 1; i < corners.length; i++) {
+    minX = Math.min(minX, corners[i].x);
+    maxX = Math.max(maxX, corners[i].x);
+    minY = Math.min(minY, corners[i].y);
+    maxY = Math.max(maxY, corners[i].y);
+  }
+  return { width: maxX - minX, height: maxY - minY };
+}
+
+/**
+ * Sorts corner points clockwise starting from the top-left point,
+ * matching Dart Barcode.corners convention (barcode.dart).
+ */
+function sortCornersClockwiseFromTopLeft(points: CornerPoint[]): CornerPoint[] {
+  if (points.length <= 1) {
+    return points;
+  }
+  let sumX: number = 0;
+  let sumY: number = 0;
+  for (let i: number = 0; i < points.length; i++) {
+    sumX += points[i].x;
+    sumY += points[i].y;
+  }
+  const cx: number = sumX / points.length;
+  const cy: number = sumY / points.length;
+
+  const sorted: CornerPoint[] = points.slice();
+  sorted.sort((a: CornerPoint, b: CornerPoint): number => {
+    return Math.atan2(a.y - cy, a.x - cx) - Math.atan2(b.y - cy, b.x - cx);
+  });
+
+  let topLeftIdx: number = 0;
+  for (let i: number = 1; i < sorted.length; i++) {
+    if (sorted[i].y < sorted[topLeftIdx].y ||
+      (sorted[i].y === sorted[topLeftIdx].y && sorted[i].x < sorted[topLeftIdx].x)) {
+      topLeftIdx = i;
+    }
+  }
+  const result: CornerPoint[] = [];
+  for (let i: number = 0; i < sorted.length; i++) {
+    result.push(sorted[(topLeftIdx + i) % sorted.length]);
+  }
+  return result;
+}
+
 export class MobileScannerPlugin implements FlutterPlugin, MethodCallHandler, AbilityAware {
   /**
    * Thread model: This plugin runs on the ArkTS UI main thread.
@@ -412,7 +470,7 @@ export class MobileScannerPlugin implements FlutterPlugin, MethodCallHandler, Ab
   private _formats: number[] | null = null;
   private _timeout: number = DEFAULT_TIMEOUT;
   private _scanOptions: scanBarcode.ScanOptions | null = null;
-  private _scanWindow: Array<number> | null = null;
+  private _scanWindow: number[] | null = null;
   private _imageProcessor: ImageProcessor = new ImageProcessor();
   private _isPaused: boolean = false;
   private _isScanReg: boolean = false;
@@ -768,7 +826,7 @@ export class MobileScannerPlugin implements FlutterPlugin, MethodCallHandler, Ab
    * @param formats - The barcode format numbers
    * @returns Array of ScanType values
    */
-  private _buildScanTypes(formats: number[] | null): Array<scanCore.ScanType> {
+  private _buildScanTypes(formats: number[] | null): scanCore.ScanType[] {
     if (formats === null || formats.length === 0) {
       return [scanCore.ScanType.ALL];
     }
@@ -861,22 +919,35 @@ export class MobileScannerPlugin implements FlutterPlugin, MethodCallHandler, Ab
 
   /**
    * Converts a ScanKit ScanResult to a Barcode object.
+   * Size is derived from corner bounding box when cornerPoints are available
+   * (approximation of Android ML Kit boundingBox / iOS frame semantics).
    * @param item - The ScanKit scan result
    * @returns The converted Barcode object
    */
   private _convertResult(item: scanBarcode.ScanResult): Barcode {
-    const rect = item.scanCodeRect;
+    let corners: CornerPoint[] = [];
     let w: number = 0;
     let h: number = 0;
-    const corners: CornerPoint[] = [];
 
-    if (rect !== null && rect !== undefined) {
-      w = this.toDouble(rect.right - rect.left);
-      h = this.toDouble(rect.bottom - rect.top);
-      corners.push(makePoint(this.toDouble(rect.left), this.toDouble(rect.top)));
-      corners.push(makePoint(this.toDouble(rect.right), this.toDouble(rect.top)));
-      corners.push(makePoint(this.toDouble(rect.right), this.toDouble(rect.bottom)));
-      corners.push(makePoint(this.toDouble(rect.left), this.toDouble(rect.bottom)));
+    const cornerPoints = item.cornerPoints;
+    if (cornerPoints !== null && cornerPoints !== undefined && cornerPoints.length > 0) {
+      for (let i: number = 0; i < cornerPoints.length; i++) {
+        corners.push(makePoint(this.toDouble(cornerPoints[i].x), this.toDouble(cornerPoints[i].y)));
+      }
+      corners = sortCornersClockwiseFromTopLeft(corners);
+      const size: ScanSize = sizeFromCorners(corners);
+      w = this.toDouble(size.width);
+      h = this.toDouble(size.height);
+    } else {
+      const rect = item.scanCodeRect;
+      if (rect !== null && rect !== undefined) {
+        w = this.toDouble(rect.right - rect.left);
+        h = this.toDouble(rect.bottom - rect.top);
+        corners.push(makePoint(this.toDouble(rect.left), this.toDouble(rect.top)));
+        corners.push(makePoint(this.toDouble(rect.right), this.toDouble(rect.top)));
+        corners.push(makePoint(this.toDouble(rect.right), this.toDouble(rect.bottom)));
+        corners.push(makePoint(this.toDouble(rect.left), this.toDouble(rect.bottom)));
+      }
     }
 
     const bc: Barcode = new Barcode();
@@ -1133,7 +1204,7 @@ export class MobileScannerPlugin implements FlutterPlugin, MethodCallHandler, Ab
     }
 
     const formats: number[] = getNumberArray(call.argument('formats')) || [];
-    const scanTypes: Array<scanCore.ScanType> = this._buildScanTypes(formats);
+    const scanTypes: scanCore.ScanType[] = this._buildScanTypes(formats);
     const opts: scanBarcode.ScanOptions = {
       scanTypes: scanTypes,
       enableMultiMode: true,
@@ -1141,7 +1212,7 @@ export class MobileScannerPlugin implements FlutterPlugin, MethodCallHandler, Ab
     };
 
     const input: detectBarcode.InputImage = { uri: filePath };
-    detectBarcode.decode(input, opts, (error: BusinessError, scanResult: Array<scanBarcode.ScanResult>) => {
+    detectBarcode.decode(input, opts, (error: BusinessError, scanResult: scanBarcode.ScanResult[]) => {
       this._handleDecodeResult(error, scanResult, result);
     });
   }
@@ -1154,8 +1225,11 @@ export class MobileScannerPlugin implements FlutterPlugin, MethodCallHandler, Ab
    */
   private _handleDecodeResult(
     error: BusinessError,
-    scanResult: Array<scanBarcode.ScanResult>,
+    scanResult: scanBarcode.ScanResult[],
     result: MethodResult): void {
+    if (this._isDetached) {
+      return;
+    }
     if (error !== null && error !== undefined) {
       result.error(ERROR_BARCODE, JSON.stringify(error), null);
       return;
@@ -1168,7 +1242,8 @@ export class MobileScannerPlugin implements FlutterPlugin, MethodCallHandler, Ab
     for (let i: number = 0; i < scanResult.length; i++) {
       barcodes.push(this._convertResult(scanResult[i]));
     }
-    result.success({ name: 'barcode', data: barcodes });
+    const data: BarcodeMap[] = Barcode.toMapList(barcodes);
+    result.success({ name: 'barcode', data: data });
   }
 
   /**
@@ -1223,7 +1298,7 @@ export class MobileScannerPlugin implements FlutterPlugin, MethodCallHandler, Ab
    * @param result - The method result callback
    */
   updateScanWindow(call: MethodCall, result: MethodResult): void {
-    const rect: Array<number> | null = getNumberArray(call.argument('rect'));
+    const rect: number[] | null = getNumberArray(call.argument('rect'));
 
     if (rect !== null) {
       if (rect.length !== MAX_RECT_LENGTH) {
@@ -1286,7 +1361,7 @@ export class MobileScannerPlugin implements FlutterPlugin, MethodCallHandler, Ab
     if (image || !this._returnImage) {
       this.publishEvent({
         'name': 'barcode',
-        'data': filtered,
+        'data': Barcode.toMapList(filtered),
         'image': info
       });
     }
