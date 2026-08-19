@@ -1283,7 +1283,13 @@ export class MobileScannerPlugin implements FlutterPlugin, MethodCallHandler, Ab
       height: height,
     };
 
-    this.publishEvent({ name: 'barcode', data: filtered, image: info });
+    if (image || !this._returnImage) {
+      this.publishEvent({
+        'name': 'barcode',
+        'data': filtered,
+        'image': info
+      });
+    }
 
     this._rescanTimer = setTimeout(() => {
       this._rescanTimer = null;
