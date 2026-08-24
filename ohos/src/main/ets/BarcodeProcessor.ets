@@ -267,43 +267,99 @@ export class BarcodeProcessor {
 
   /**
    * Parses scan results into Barcode array.
-   * Prefers cornerPoints for quadrilateral support (consistent with analyzeImage),
+   * Prefers cornerPoints for quadrilateral support,
    * falls back to scanCodeRect for rectangular bounds.
    * @param result - The raw scan results from ScanKit.
+   * @param imageWidth - When provided (analyzeImage path), rotates corner coordinates
+   *   into the decoded image coordinate space.
    * @returns Array of parsed Barcode objects.
    */
-  parseScanResults(result: scanBarcode.ScanResult[]): Barcode[] {
-    return result.map((item: scanBarcode.ScanResult): Barcode => {
-      const cornerPoints = item.cornerPoints;
-      let width: number = 0;
-      let height: number = 0;
-      let corners: Point[] = [];
-      if (cornerPoints && cornerPoints.length >= 4) {
-        // Use cornerPoints for quadrilateral support (consistent with analyzeImage)
+  parseScanResults(result: scanBarcode.ScanResult[], imageWidth?: number): Barcode[] {
+    return result.map((item: scanBarcode.ScanResult): Barcode =>
+      this.parseScanResultItem(item, imageWidth));
+  }
+
+  /**
+   * Parses a single ScanKit result into a Barcode.
+   * @param item - A single scan result from ScanKit.
+   * @param imageWidth - Optional image width for analyzeImage coordinate transform.
+   * @returns Parsed Barcode with corners and size populated when available.
+   */
+  private parseScanResultItem(item: scanBarcode.ScanResult, imageWidth?: number): Barcode {
+    const cornerPoints = item.cornerPoints;
+    let width: number = 0;
+    let height: number = 0;
+    let corners: Point[] = [];
+
+    if (cornerPoints && cornerPoints.length >= 4) {
+      if (imageWidth !== undefined) {
         corners = [
           {
-              x: this.ensureDoublePrecision(cornerPoints[0].x),
-              y: this.ensureDoublePrecision(cornerPoints[0].y)
+            x: this.ensureDoublePrecision(imageWidth - cornerPoints[0].y),
+            y: this.ensureDoublePrecision(cornerPoints[0].x)
           } as Point,
           {
-              x: this.ensureDoublePrecision(cornerPoints[1].x),
-              y: this.ensureDoublePrecision(cornerPoints[1].y)
+            x: this.ensureDoublePrecision(imageWidth - cornerPoints[1].y),
+            y: this.ensureDoublePrecision(cornerPoints[1].x)
           } as Point,
           {
-              x: this.ensureDoublePrecision(cornerPoints[2].x),
-              y: this.ensureDoublePrecision(cornerPoints[2].y)
+            x: this.ensureDoublePrecision(imageWidth - cornerPoints[2].y),
+            y: this.ensureDoublePrecision(cornerPoints[2].x)
           } as Point,
           {
-              x: this.ensureDoublePrecision(cornerPoints[3].x),
-              y: this.ensureDoublePrecision(cornerPoints[3].y)
+            x: this.ensureDoublePrecision(imageWidth - cornerPoints[3].y),
+            y: this.ensureDoublePrecision(cornerPoints[3].x)
+          } as Point,
+        ];
+        width = this.ensureDoublePrecision(Math.abs(corners[2].x - corners[0].x));
+        height = this.ensureDoublePrecision(Math.abs(corners[2].y - corners[0].y));
+      } else {
+        corners = [
+          {
+            x: this.ensureDoublePrecision(cornerPoints[0].x),
+            y: this.ensureDoublePrecision(cornerPoints[0].y)
+          } as Point,
+          {
+            x: this.ensureDoublePrecision(cornerPoints[1].x),
+            y: this.ensureDoublePrecision(cornerPoints[1].y)
+          } as Point,
+          {
+            x: this.ensureDoublePrecision(cornerPoints[2].x),
+            y: this.ensureDoublePrecision(cornerPoints[2].y)
+          } as Point,
+          {
+            x: this.ensureDoublePrecision(cornerPoints[3].x),
+            y: this.ensureDoublePrecision(cornerPoints[3].y)
           } as Point,
         ];
         width = this.ensureDoublePrecision(Math.abs(cornerPoints[2].x - cornerPoints[0].x));
         height = this.ensureDoublePrecision(Math.abs(cornerPoints[2].y - cornerPoints[0].y));
-      } else {
-        // Fallback to scanCodeRect when cornerPoints not available
-        const rect = item.scanCodeRect;
-        if (rect) {
+      }
+    } else {
+      const rect = item.scanCodeRect;
+      if (rect) {
+        if (imageWidth !== undefined) {
+          corners = [
+            {
+              x: this.ensureDoublePrecision(imageWidth - rect.top),
+              y: this.ensureDoublePrecision(rect.left)
+            } as Point,
+            {
+              x: this.ensureDoublePrecision(imageWidth - rect.top),
+              y: this.ensureDoublePrecision(rect.right)
+            } as Point,
+            {
+              x: this.ensureDoublePrecision(imageWidth - rect.bottom),
+              y: this.ensureDoublePrecision(rect.right)
+            } as Point,
+            {
+              x: this.ensureDoublePrecision(imageWidth - rect.bottom),
+              y: this.ensureDoublePrecision(rect.left)
+            } as Point,
+          ];
+          width = this.ensureDoublePrecision(Math.abs(corners[2].x - corners[0].x));
+          height = this.ensureDoublePrecision(Math.abs(corners[2].y - corners[0].y));
+        } else {
           width = this.ensureDoublePrecision(rect.right - rect.left);
           height = this.ensureDoublePrecision(rect.bottom - rect.top);
           corners = [
@@ -314,15 +370,16 @@ export class BarcodeProcessor {
           ];
         }
       }
-      return {
-        displayValue: item.originalValue,
-        rawValue: item.originalValue,
-        format: Barcode.convertScanType(item.scanType),
-        type: BarcodeType.unknown,
-        size: { width: width, height: height },
-        corners: corners
-      } as Barcode;
-    });
+    }
+
+    return {
+      displayValue: item.originalValue,
+      rawValue: item.originalValue,
+      format: Barcode.convertScanType(item.scanType),
+      type: BarcodeType.unknown,
+      size: { width: width, height: height },
+      corners: corners
+    } as Barcode;
   }
 
   /**

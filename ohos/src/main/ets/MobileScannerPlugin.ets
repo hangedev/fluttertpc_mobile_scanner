@@ -32,10 +32,10 @@ import { customScan, scanBarcode, scanCore, detectBarcode } from '@kit.ScanKit';
 import { AsyncCallback, BusinessError } from '@kit.BasicServicesKit';
 import { image } from '@kit.ImageKit';
 
-import { Barcode, BarcodeFormat, BarcodeType, SizeResult } from './Barcode';
-import { Point } from '@ohos.UiTest';
+import { Barcode, BarcodeFormat } from './Barcode';
 import { CAMERA_PERMISSION, checkPermissions, requestPermissions } from './CameraPermissions';
 import { ScanHandler } from './ScanHandler';
+import { BarcodeProcessor } from './BarcodeProcessor';
 
 const TAG: string = 'MobileScannerPlugin';
 
@@ -90,6 +90,7 @@ export class MobileScannerPlugin implements FlutterPlugin, MethodCallHandler, Ab
   private surfaceId: string | null = null;
   private binding: FlutterPluginBinding | null = null;
   private scanHandler: ScanHandler | null = null;
+  private barcodeProcessor: BarcodeProcessor = new BarcodeProcessor();
   private isStart: boolean = false;
   private facing: number = 0;
   private formats: number[] | undefined = undefined;
@@ -416,37 +417,7 @@ export class MobileScannerPlugin implements FlutterPlugin, MethodCallHandler, Ab
         result.success(null);
         return;
       }
-      const barcodes: Barcode[] = scanResult.map((item: scanBarcode.ScanResult): Barcode => {
-        const cornerPoints = item.cornerPoints;
-        let corners: Point[] = [];
-        if (cornerPoints !== undefined && cornerPoints !== null) {
-          corners = [
-            {
-                x: this.ensureDoublePrecision(imageWidth - cornerPoints[0].y),
-                y: this.ensureDoublePrecision(cornerPoints[0].x)
-            },
-            {
-                x: this.ensureDoublePrecision(imageWidth - cornerPoints[1].y),
-                y: this.ensureDoublePrecision(cornerPoints[1].x)
-            },
-            {
-                x: this.ensureDoublePrecision(imageWidth - cornerPoints[2].y),
-                y: this.ensureDoublePrecision(cornerPoints[2].x)
-            },
-            {
-                x: this.ensureDoublePrecision(imageWidth - cornerPoints[3].y),
-                y: this.ensureDoublePrecision(cornerPoints[3].x)
-            },
-          ];
-        }
-        return {
-          displayValue: item.originalValue,
-          rawValue: item.originalValue,
-          format: Barcode.convertScanType(item.scanType),
-          type: BarcodeType.unknown,
-          corners: corners
-        } as Barcode;
-      });
+      const barcodes: Barcode[] = this.barcodeProcessor.parseScanResults(scanResult, imageWidth);
       result.success({ name: 'barcode', data: barcodes });
     };
   }
@@ -531,10 +502,4 @@ export class MobileScannerPlugin implements FlutterPlugin, MethodCallHandler, Ab
     }
   }
 
-  private ensureDoublePrecision(number: number): number {
-    if (Number.isInteger(number)) {
-      number += 0.00000000001;
-    }
-    return number;
-  }
 }
