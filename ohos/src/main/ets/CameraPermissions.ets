@@ -19,7 +19,7 @@ import { BusinessError } from '@ohos.base';
 
 type ResultCallback = (errCode: string | null, errDesc: string | null) => void;
 
-export const CAMERA_PERMISSION: Array<Permissions> = ['ohos.permission.CAMERA'];
+export const CAMERA_PERMISSION: Permissions[] = ['ohos.permission.CAMERA'];
 
 /**
  * Extract the error code number from a BusinessError object.
@@ -100,7 +100,7 @@ async function checkAccessToken(permission: Permissions): Promise<abilityAccessC
  * @param permissions - Array of permissions to check
  * @returns true if all permissions are granted
  */
-export async function checkPermissions(permissions: Array<Permissions>): Promise<boolean> {
+export async function checkPermissions(permissions: Permissions[]): Promise<boolean> {
   if (permissions === null || permissions === undefined || permissions.length === 0) {
     return false;
   }
@@ -131,7 +131,7 @@ export async function requestPermissions(
   const atManager: abilityAccessCtrl.AtManager = abilityAccessCtrl.createAtManager();
   try {
     const data: PermissionRequestResult = await atManager.requestPermissionsFromUser(context, CAMERA_PERMISSION);
-    const results: Array<number> = data.authResults;
+    const results: number[] = data.authResults;
     if (results === null || results === undefined) {
       callback('ERR_NO_RESULT', 'No permission result');
       return;

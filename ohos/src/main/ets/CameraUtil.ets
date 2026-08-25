@@ -72,7 +72,7 @@ export function getCameraManager(context: common.BaseContext): camera.CameraMana
  * @param context - The application context
  * @returns Array of CameraDevice, or empty array if unavailable
  */
-export function getSupportedCameras(context: common.BaseContext): Array<camera.CameraDevice> {
+export function getSupportedCameras(context: common.BaseContext): camera.CameraDevice[] {
   try {
     const mgr: camera.CameraManager | undefined = getCameraManager(context);
     if (mgr === undefined) {

@@ -3,7 +3,7 @@
 ## 6.0.10-ohos-1.0.0 - 2026.8
 
 ### Bug Fixes
-- Fixed `returnImage` enabled scan showing "No image for this barcode" — adjusted `callback()` publish timing so barcode events are sent only after the image buffer is ready when `returnImage` is true, aligned with Android behavior
+- Fixed `analyzeImage` barcode results missing `corners` on OpenHarmony — barcodes are now serialized via `Barcode.toMap()` before MethodChannel/EventChannel transmission (matching Android/iOS); `_convertResult()` prefers ScanKit `cornerPoints` when available and falls back to `scanCodeRect`
 - Fixed privacy compliance issue where the plugin accessed sensor data before user consent to the privacy policy.
 - Fixed `onDetachedFromAbility` not cleaning up `scanResultCallback` and `frameResultCallback` references — now sets them to null to prevent closure leaks
 - Fixed `processFrame()` not awaited in `onFrameResult_` — now properly awaits the async method to ensure image buffer is ready before scan result callback
