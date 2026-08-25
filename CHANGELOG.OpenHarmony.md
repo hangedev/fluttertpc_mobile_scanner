@@ -3,6 +3,7 @@
 ## 6.0.2-ohos-1.0.0
 
 ### Bugs Fixed
+- Fixed `analyzeImage` returning `Barcode` objects without `corners` — now reuses shared ScanKit result parsing with `scanCodeRect` fallback and includes `size`, matching Android/iOS behavior.
 - Fixed privacy compliance issue where the plugin accessed sensor data before user consent to the privacy policy:
   - Removed `display.orientation` usage in `ScanHandler.setDisplay()` — reading screen orientation on ohos may trigger accelerometer access; replaced with portrait detection via display width/height comparison (`height >= width`).
   - Deferred camera preview texture (`registerTexture`) registration from `onAttachedToEngine` to `start()` — plugin attach no longer initializes camera-related hardware resources at app launch before privacy consent.
