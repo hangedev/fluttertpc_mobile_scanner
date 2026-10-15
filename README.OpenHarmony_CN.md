@@ -258,7 +258,7 @@ await controller.switchCamera();
 ### 环境配置
 
 **前置要求：**
-- DevEco Studio 5.0.13.200 或更高版本
+- DevEco Studio（与 Flutter SDK 版本匹配）
 - OHOS SDK 5.0.0(12) 或更高版本
 - Flutter OHOS 插件 3.7.12-ohos-1.0.6 / 3.22.1-ohos-1.0.1 / 3.27.4-ohos-1.0.0
 
