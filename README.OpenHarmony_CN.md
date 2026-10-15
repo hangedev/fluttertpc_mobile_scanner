@@ -126,7 +126,7 @@ controller.dispose();
 
 #### 开发环境配置
 
-1. 安装 DevEco Studio 5.0.13.200 或更高版本
+1. 安装 DevEco Studio（与 Flutter SDK 版本匹配）
 2. 安装 OHOS SDK 5.0.0(12) 或更高版本
 3. 配置 `oh-package.json5` 依赖
 4. 使用 `flutter pub get` 拉取依赖

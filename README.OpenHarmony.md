@@ -132,7 +132,7 @@ This library has been verified on the following versions:
 
 #### Development Environment Setup
 
-1. Install DevEco Studio 5.0.13.200 or higher
+1. Install DevEco Studio (matching your Flutter SDK version)
 2. Install OHOS SDK 5.0.0(12) or higher
 3. Configure `oh-package.json5` dependencies
 4. Run `flutter pub get` to fetch dependencies
