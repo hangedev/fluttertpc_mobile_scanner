@@ -133,7 +133,7 @@ This library has been verified on the following versions:
 #### Development Environment Setup
 
 1. Install DevEco Studio (matching your Flutter SDK version)
-2. Install OHOS SDK 5.0.0(12) or higher
+2. Install OHOS SDK (matching your Flutter SDK version)
 3. Configure `oh-package.json5` dependencies
 4. Run `flutter pub get` to fetch dependencies
 5. Open the `ohos/` directory in DevEco Studio for building
