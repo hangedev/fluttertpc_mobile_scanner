@@ -258,7 +258,7 @@ Add the permission reason to `entry/src/main/resources/base/element/string.json`
 
 **Prerequisites:**
 - DevEco Studio (matching your Flutter SDK version)
-- OHOS SDK 5.0.0(12) or later
+- OHOS SDK (matching your Flutter SDK version)
 - Flutter OHOS plugin 3.7.12-ohos-1.0.6 / 3.22.1-ohos-1.0.1 / 3.27.4-ohos-1.0.0
 
 **Build Steps:**
